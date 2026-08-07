@@ -5,6 +5,7 @@ import {
 } from './constants/elementSchemas'
 import { buildFinishModel } from './three/buildFinishModel'
 import { buildEarthworkModel } from './three/buildEarthworkModel'
+import { buildColumnModel } from './three/buildColumnModel'
 import { buildFootingModel } from './three/buildFootingModel'
 import { buildPileModel } from './three/buildPileModel'
 import { buildPileCapModel } from './three/buildPileCapModel'
@@ -32,6 +33,7 @@ export const ELEMENT_ENGINES: Record<string, FrontendElementEngine> = {
   PILE_CAP: engine('PILE_CAP', buildPileCapModel),
   PILES: engine('PILES', buildPileModel),
   EARTHWORKS: engine('EARTHWORKS', buildEarthworkModel),
+  COLUMNS: engine('COLUMNS', buildColumnModel),
   STONE_STRIP: engine('STONE_STRIP', buildStoneModel),
   WALLS: engine('WALLS', buildWallModel),
   FLOOR_FINISH: engine('FLOOR_FINISH', (instance) =>

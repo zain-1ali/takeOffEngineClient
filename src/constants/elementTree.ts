@@ -26,7 +26,7 @@ export const ELEMENT_TREE: ElementModule[] = [
       { num: 4, key: 'PILE_CAP', label: 'Pile Cap', implemented: true },
       { num: 5, key: 'PILES', label: 'Piles', implemented: true },
       { num: 6, key: 'EARTHWORKS', label: 'Earthworks', implemented: true },
-      { num: 7, key: 'COLUMNS', label: 'Columns', implemented: false },
+      { num: 7, key: 'COLUMNS', label: 'Columns', implemented: true },
       { num: 8, key: 'WALLS', label: 'Walls', implemented: true },
       { num: 9, key: 'BEAMS', label: 'Beams', implemented: false },
       { num: 10, key: 'SLABS', label: 'Slabs', implemented: false },

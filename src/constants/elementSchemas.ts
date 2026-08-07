@@ -308,6 +308,66 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     ],
   },
 
+  COLUMNS: {
+    label: 'Columns',
+    markPrefix: 'C',
+    reportKind: 'structural',
+    hasGrade: true,
+    hasRebar: true,
+    shapes: {
+      RECTANGULAR: { label: 'Rectangular' },
+      CIRCULAR: { label: 'Circular' },
+      L_SHAPED: { label: 'L-shaped' },
+      T_SHAPED: { label: 'T-shaped' },
+      CRUCIFORM: { label: 'Cruciform' },
+    },
+    addButtons: [
+      { shape: 'RECTANGULAR', label: '+ Rectangular', primary: true },
+      { shape: 'CIRCULAR', label: '+ Circular' },
+      { shape: 'L_SHAPED', label: '+ L-shaped' },
+      { shape: 'T_SHAPED', label: '+ T-shaped' },
+      { shape: 'CRUCIFORM', label: '+ Cruciform' },
+    ],
+    geometryByShape: {
+      RECTANGULAR: [
+        { key: 'width', label: 'W (m)', min: 0.15, max: 3, step: 0.05, dec: 2, def: 0.4 },
+        { key: 'depth', label: 'D (m)', min: 0.15, max: 3, step: 0.05, dec: 2, def: 0.3 },
+        { key: 'clearHeight', label: 'H (m)', min: 0.5, max: 20, step: 0.1, dec: 2, def: 3 },
+      ],
+      CIRCULAR: [
+        { key: 'diameter', label: 'Dia. (m)', min: 0.15, max: 3, step: 0.05, dec: 2, def: 0.4 },
+        { key: 'clearHeight', label: 'H (m)', min: 0.5, max: 20, step: 0.1, dec: 2, def: 3 },
+      ],
+      L_SHAPED: [
+        { key: 'width', label: 'Overall W (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.6 },
+        { key: 'depth', label: 'Overall D (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.5 },
+        { key: 'legThickness', label: 'Leg T (m)', min: 0.1, max: 2, step: 0.05, dec: 2, def: 0.2 },
+        { key: 'clearHeight', label: 'H (m)', min: 0.5, max: 20, step: 0.1, dec: 2, def: 3 },
+      ],
+      T_SHAPED: [
+        { key: 'flangeWidth', label: 'Flange W (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.6 },
+        { key: 'overallDepth', label: 'Overall D (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.5 },
+        { key: 'flangeThickness', label: 'Flange T (m)', min: 0.1, max: 2, step: 0.05, dec: 2, def: 0.2 },
+        { key: 'webThickness', label: 'Web T (m)', min: 0.1, max: 2, step: 0.05, dec: 2, def: 0.2 },
+        { key: 'clearHeight', label: 'H (m)', min: 0.5, max: 20, step: 0.1, dec: 2, def: 3 },
+      ],
+      CRUCIFORM: [
+        { key: 'width', label: 'Overall W (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.8 },
+        { key: 'depth', label: 'Overall D (m)', min: 0.2, max: 5, step: 0.05, dec: 2, def: 0.6 },
+        { key: 'armThickness', label: 'Arm T (m)', min: 0.1, max: 2, step: 0.05, dec: 2, def: 0.2 },
+        { key: 'clearHeight', label: 'H (m)', min: 0.5, max: 20, step: 0.1, dec: 2, def: 3 },
+      ],
+    },
+    rebarFields: [
+      { key: 'cover', label: 'Cover (mm)', min: 20, max: 100, step: 5, dec: 0, def: 40 },
+      { key: 'longBarCount', label: 'Long. bars', type: 'int', min: 2, max: 60, step: 1, dec: 0, def: 8 },
+      { key: 'longBarDia', label: 'Long. dia', type: 'select', options: BAR_SIZES, def: 16 },
+      { key: 'tieDia', label: 'Tie dia', type: 'select', options: BAR_SIZES, def: 8 },
+      { key: 'tieSpacing', label: 'Tie spc', min: 75, max: 400, step: 25, dec: 0, def: 200 },
+    ],
+    outputCols: STRUCTURAL_OUTPUT,
+  },
+
   STRIP_FOOTING: {
     label: 'Strip Foundation',
     markPrefix: 'SF',

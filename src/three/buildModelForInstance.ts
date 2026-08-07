@@ -49,6 +49,8 @@ export function planDimForInstance(inst: Instance): number {
     Number(g.flangeWidth) || 0,
     Number(g.trenchWidth) || 0,
     Number(g.depth) || 0,
+    Number(g.clearHeight) || 0,
+    Number(g.overallDepth) || 0,
     Number(g.wallLength) || 0,
     Number(g.wallHeight) || 0,
     Number(g.roomLength) || 0,

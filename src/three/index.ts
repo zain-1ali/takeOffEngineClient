@@ -12,6 +12,8 @@ export { buildPileModel } from './buildPileModel';
 export type { PileInstance } from './buildPileModel';
 export { buildEarthworkModel } from './buildEarthworkModel';
 export type { EarthworkInstance } from './buildEarthworkModel';
+export { buildColumnModel } from './buildColumnModel';
+export type { ColumnInstance } from './buildColumnModel';
 export { buildStripModel } from './buildStripModel';
 export type { StripFootingInstance } from './buildStripModel';
 export { buildWallModel } from './buildWallModel';
