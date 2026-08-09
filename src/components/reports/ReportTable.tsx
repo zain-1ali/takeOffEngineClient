@@ -1,10 +1,6 @@
+import { formatMoney } from '../../lib/units'
 import type { ReportLine } from '../../types/reports'
 import { DataTable } from '../ui'
-
-function money(n: number | null | undefined, currency: string): string {
-  if (n == null || Number.isNaN(n)) return '—'
-  return `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 function fmtQty(qty: number | undefined, line: ReportLine): string {
   if (qty == null || Number.isNaN(qty)) return '—'
@@ -56,6 +52,11 @@ export function ReportTable({
                     colSpan={6}
                     className="!py-2 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[11px]"
                   >
+                    {line.source === 'MANUAL' && (
+                      <span className="normal-case tracking-normal text-signal mr-2 font-medium">
+                        Manual
+                      </span>
+                    )}
                     {line.description}
                   </DataTable.Cell>
                 </DataTable.Row>
@@ -66,7 +67,7 @@ export function ReportTable({
                 <DataTable.Row key={i} totals>
                   <DataTable.Cell colSpan={5}>{line.description}</DataTable.Cell>
                   <DataTable.Cell numeric className="text-ink font-bold">
-                    {money(line.amount, currency)}
+                    {formatMoney(line.amount, currency)}
                   </DataTable.Cell>
                 </DataTable.Row>
               )
@@ -74,7 +75,16 @@ export function ReportTable({
             return (
               <DataTable.Row key={i}>
                 <DataTable.Cell className="font-mono text-steel">{line.ref}</DataTable.Cell>
-                <DataTable.Cell>{line.description}</DataTable.Cell>
+                <DataTable.Cell>
+                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    {line.source === 'MANUAL' && (
+                      <span className="text-[10px] uppercase tracking-wide text-signal border border-signal/40 px-1 py-0.5">
+                        Manual
+                      </span>
+                    )}
+                    {line.description}
+                  </span>
+                </DataTable.Cell>
                 <DataTable.Cell
                   numeric
                   className={line.isRebar ? 'text-chalk' : undefined}
@@ -83,9 +93,9 @@ export function ReportTable({
                 </DataTable.Cell>
                 <DataTable.Cell className="text-steel">{line.unit}</DataTable.Cell>
                 <DataTable.Cell numeric className="text-steel">
-                  {money(line.rate, currency)}
+                  {formatMoney(line.rate, currency)}
                 </DataTable.Cell>
-                <DataTable.Cell numeric>{money(line.amount, currency)}</DataTable.Cell>
+                <DataTable.Cell numeric>{formatMoney(line.amount, currency)}</DataTable.Cell>
               </DataTable.Row>
             )
           })}

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { COLORS3D } from './colors'
 import { barCountForSpan } from './math'
+import { addPlanDims } from './dimensions'
 import { makeBoxMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
@@ -123,15 +124,7 @@ export function buildRaftModel(f: RaftInstance): THREE.Group {
     addMesh(group, f, extraDepth + f.thickness - cover)
   }
 
-  if (modelViewOptions.showDims) {
-    const y = -0.05
-    const material = new THREE.LineBasicMaterial({ color: COLORS3D.wire })
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-f.length / 2, y, f.width / 2 + 0.2),
-      new THREE.Vector3(f.length / 2, y, f.width / 2 + 0.2),
-    ])
-    group.add(new THREE.Line(geometry, material))
-  }
+  addPlanDims(group, f.length, f.width)
 
   return group
 }

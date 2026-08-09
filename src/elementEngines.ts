@@ -6,6 +6,10 @@ import {
 import { buildFinishModel } from './three/buildFinishModel'
 import { buildEarthworkModel } from './three/buildEarthworkModel'
 import { buildColumnModel } from './three/buildColumnModel'
+import { buildBeamModel } from './three/buildBeamModel'
+import { buildSlabModel } from './three/buildSlabModel'
+import { buildStairModel } from './three/buildStairModel'
+import { buildRampModel } from './three/buildRampModel'
 import { buildFootingModel } from './three/buildFootingModel'
 import { buildPileModel } from './three/buildPileModel'
 import { buildPileCapModel } from './three/buildPileCapModel'
@@ -34,6 +38,10 @@ export const ELEMENT_ENGINES: Record<string, FrontendElementEngine> = {
   PILES: engine('PILES', buildPileModel),
   EARTHWORKS: engine('EARTHWORKS', buildEarthworkModel),
   COLUMNS: engine('COLUMNS', buildColumnModel),
+  BEAMS: engine('BEAMS', buildBeamModel),
+  SLABS: engine('SLABS', buildSlabModel),
+  STAIRS: engine('STAIRS', buildStairModel),
+  RAMPS: engine('RAMPS', buildRampModel),
   STONE_STRIP: engine('STONE_STRIP', buildStoneModel),
   WALLS: engine('WALLS', buildWallModel),
   FLOOR_FINISH: engine('FLOOR_FINISH', (instance) =>

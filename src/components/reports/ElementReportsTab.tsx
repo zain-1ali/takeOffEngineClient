@@ -23,7 +23,16 @@ export function ElementReportsTab({
   const implemented = !!ELEMENT_ENGINES[elementKey]
 
   const query = useQuery({
-    queryKey: ['reports', project.id, 'floor', floorId, elementKey],
+    queryKey: [
+      'reports',
+      project.id,
+      'floor',
+      floorId,
+      elementKey,
+      project.units,
+      project.currency,
+      project.updatedAt,
+    ],
     queryFn: () =>
       getReports(project.id, { scope: 'floor', floorId, elementKey }),
     enabled: implemented && !!floorId,

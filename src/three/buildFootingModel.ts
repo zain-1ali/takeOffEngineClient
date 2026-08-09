@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { COLORS3D } from './colors';
 import { barCountForSpan } from './math';
+import { addPlanDims } from './dimensions';
 import { makeBoxMesh, makeFrustumMesh, makeRebarBar } from './meshes';
 import { modelViewOptions } from './viewOptions';
 
@@ -118,17 +119,7 @@ export function buildFootingModel(f: PadFootingInstance): THREE.Group {
     }
   }
 
-  // Dimension annotations (simple lines) along base
-  if (modelViewOptions.showDims) {
-    const y = -0.05;
-    const dimMat = new THREE.LineBasicMaterial({ color: 0xc9d3dc });
-    const addLine = (a: THREE.Vector3, b: THREE.Vector3) => {
-      const g = new THREE.BufferGeometry().setFromPoints([a, b]);
-      group.add(new THREE.Line(g, dimMat));
-    };
-    addLine(new THREE.Vector3(-L / 2, y, W / 2 + 0.15), new THREE.Vector3(L / 2, y, W / 2 + 0.15)); // L
-    addLine(new THREE.Vector3(L / 2 + 0.15, y, -W / 2), new THREE.Vector3(L / 2 + 0.15, y, W / 2)); // W
-  }
+  addPlanDims(group, L, W);
 
   return group;
 }

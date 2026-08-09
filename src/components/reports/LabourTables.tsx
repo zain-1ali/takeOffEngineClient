@@ -1,9 +1,6 @@
+import { formatMoney } from '../../lib/units'
 import type { LabourActivity, TradeSummary } from '../../types/reports'
 import { DataTable } from '../ui'
-
-function money(n: number, currency: string): string {
-  return `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 export function LabourTables({
   activities,
@@ -47,7 +44,16 @@ export function LabourTables({
             {activities.map((a) => (
               <DataTable.Row key={a.ref}>
                 <DataTable.Cell className="font-mono text-steel">{a.ref}</DataTable.Cell>
-                <DataTable.Cell>{a.activity}</DataTable.Cell>
+                <DataTable.Cell>
+                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    {a.source === 'MANUAL' && (
+                      <span className="text-[10px] uppercase tracking-wide text-signal border border-signal/40 px-1 py-0.5">
+                        Manual
+                      </span>
+                    )}
+                    {a.activity}
+                  </span>
+                </DataTable.Cell>
                 <DataTable.Cell numeric>{a.qty.toFixed(2)}</DataTable.Cell>
                 <DataTable.Cell className="text-steel">{a.unit}</DataTable.Cell>
                 <DataTable.Cell className="text-steel">{a.outputRate}</DataTable.Cell>
@@ -84,9 +90,9 @@ export function LabourTables({
                 {showTradeCost && (
                   <>
                     <DataTable.Cell numeric className="text-steel">
-                      {money(t.dayRate, currency)}
+                      {formatMoney(t.dayRate, currency)}
                     </DataTable.Cell>
-                    <DataTable.Cell numeric>{money(t.cost, currency)}</DataTable.Cell>
+                    <DataTable.Cell numeric>{formatMoney(t.cost, currency)}</DataTable.Cell>
                   </>
                 )}
               </DataTable.Row>
@@ -100,7 +106,7 @@ export function LabourTables({
                 <>
                   <DataTable.Cell />
                   <DataTable.Cell numeric className="text-ink font-bold">
-                    {money(totalCost, currency)}
+                    {formatMoney(totalCost, currency)}
                   </DataTable.Cell>
                 </>
               )}

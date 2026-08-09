@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { COLORS3D } from './colors'
 import { barCountForSpan } from './math'
+import { addHeightDim, addPlanDims } from './dimensions'
 import { makePrismMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
@@ -158,65 +159,84 @@ export function buildColumnModel(f: ColumnInstance): THREE.Group {
     )
   }
 
-  if (!modelViewOptions.showRebar) return group
+  const planWidth =
+    f.shape === 'CIRCULAR'
+      ? f.diameter || 0
+      : f.shape === 'T_SHAPED'
+        ? f.flangeWidth || 0
+        : f.width || 0
+  const planDepth =
+    f.shape === 'CIRCULAR'
+      ? f.diameter || 0
+      : f.shape === 'T_SHAPED'
+        ? f.overallDepth || 0
+        : f.depth || 0
 
-  let longitudinalPositions: [number, number][]
-  let tiePoints: [number, number][] = []
-  if (circular) {
-    const radius = Math.max(0.02, (f.diameter || 0) / 2 - cover)
-    longitudinalPositions = Array.from({ length: f.longBarCount }, (_, i) => {
-      const angle = (i * Math.PI * 2) / Math.max(1, f.longBarCount)
-      return [Math.cos(angle) * radius, Math.sin(angle) * radius]
-    })
-  } else {
-    tiePoints = inset(planPoints(f), cover)
-    longitudinalPositions = samplePerimeter(tiePoints, f.longBarCount)
-  }
-
-  longitudinalPositions.forEach(([x, z]) => {
-    const bar = makeRebarBar(
-      x,
-      cover,
-      z,
-      x,
-      f.clearHeight - cover,
-      z,
-      f.longBarDia,
-    )
-    if (bar) group.add(bar)
-  })
-
-  const tieCount = barCountForSpan(f.clearHeight, f.tieSpacing)
-  for (let i = 0; i < tieCount; i++) {
-    const y = (i * f.clearHeight) / (tieCount - 1 || 1)
+  if (modelViewOptions.showRebar) {
+    let longitudinalPositions: [number, number][]
+    let tiePoints: [number, number][] = []
     if (circular) {
       const radius = Math.max(0.02, (f.diameter || 0) / 2 - cover)
-      const geometry = new THREE.TorusGeometry(
-        radius,
-        Math.max(0.006, (f.tieDia / 1000) * 1.5),
-        6,
-        24,
-      )
-      const material = new THREE.MeshLambertMaterial({ color: COLORS3D.rebar })
-      const tie = new THREE.Mesh(geometry, material)
-      tie.rotation.x = Math.PI / 2
-      tie.position.y = y
-      group.add(tie)
-    } else {
-      tiePoints.forEach(([x, z], pointIndex) => {
-        const [nextX, nextZ] = tiePoints[(pointIndex + 1) % tiePoints.length]
-        const bar = makeRebarBar(
-          x,
-          y,
-          z,
-          nextX,
-          y,
-          nextZ,
-          f.tieDia,
-        )
-        if (bar) group.add(bar)
+      longitudinalPositions = Array.from({ length: f.longBarCount }, (_, i) => {
+        const angle = (i * Math.PI * 2) / Math.max(1, f.longBarCount)
+        return [Math.cos(angle) * radius, Math.sin(angle) * radius]
       })
+    } else {
+      tiePoints = inset(planPoints(f), cover)
+      longitudinalPositions = samplePerimeter(tiePoints, f.longBarCount)
+    }
+
+    longitudinalPositions.forEach(([x, z]) => {
+      const bar = makeRebarBar(
+        x,
+        cover,
+        z,
+        x,
+        f.clearHeight - cover,
+        z,
+        f.longBarDia,
+      )
+      if (bar) group.add(bar)
+    })
+
+    const tieCount = barCountForSpan(f.clearHeight, f.tieSpacing)
+    for (let i = 0; i < tieCount; i++) {
+      const y = (i * f.clearHeight) / (tieCount - 1 || 1)
+      if (circular) {
+        const radius = Math.max(0.02, (f.diameter || 0) / 2 - cover)
+        const geometry = new THREE.TorusGeometry(
+          radius,
+          Math.max(0.006, (f.tieDia / 1000) * 1.5),
+          6,
+          24,
+        )
+        const material = new THREE.MeshLambertMaterial({ color: COLORS3D.rebar })
+        const tie = new THREE.Mesh(geometry, material)
+        tie.rotation.x = Math.PI / 2
+        tie.position.y = y
+        group.add(tie)
+      } else {
+        tiePoints.forEach(([x, z], pointIndex) => {
+          const [nextX, nextZ] = tiePoints[(pointIndex + 1) % tiePoints.length]
+          const bar = makeRebarBar(
+            x,
+            y,
+            z,
+            nextX,
+            y,
+            nextZ,
+            f.tieDia,
+          )
+          if (bar) group.add(bar)
+        })
+      }
     }
   }
+
+  addPlanDims(group, planWidth, planDepth)
+  addHeightDim(group, f.clearHeight, {
+    x: planWidth / 2,
+    z: planDepth / 2,
+  })
   return group
 }

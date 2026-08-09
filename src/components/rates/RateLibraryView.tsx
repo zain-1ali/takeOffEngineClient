@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import { analyseRate } from '../../lib/analyseRate'
+import {
+  applyRateDatabankImport,
+  parseRateDatabankWorkbook,
+  type RateDatabankImportPreview,
+} from '../../lib/importRateDatabank'
+import { formatMoney } from '../../lib/units'
 import type { Project } from '../../types/api'
 import type {
   RateAnalysisDef,
@@ -8,14 +14,12 @@ import type {
   RateMethod,
   RateResource,
 } from '../../types/rateLib'
+import { Modal } from '../modals/Modal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import { RatePdfImportPanel } from './RatePdfImportPanel'
 
 type RaTab = 'buildups' | 'materials' | 'labour' | 'equipment' | 'methods'
 type LibKey = 'materials' | 'labour' | 'equipment'
-
-function money(n: number, currency: string): string {
-  return `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 function cloneLib(lib: RateLib): RateLib {
   return JSON.parse(JSON.stringify(lib)) as RateLib
@@ -36,11 +40,53 @@ export function RateLibraryView({
   const [lib, setLib] = useState<RateLib>(() => cloneLib(project.rateLib))
   const [useRA, setUseRA] = useState(project.useRateAnalysis !== false)
   const [selected, setSelected] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importPreview, setImportPreview] = useState<RateDatabankImportPreview | null>(
+    null,
+  )
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
 
   useEffect(() => {
     setLib(cloneLib(project.rateLib))
     setUseRA(project.useRateAnalysis !== false)
   }, [project.id])
+
+  function closeImport() {
+    setImportPreview(null)
+    setImportError(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function onImportFile(file: File | undefined) {
+    if (!file) return
+    setImportBusy(true)
+    setImportError(null)
+    setImportPreview(null)
+    try {
+      const buf = await file.arrayBuffer()
+      const result = parseRateDatabankWorkbook(buf, lib)
+      if (!result.ok) {
+        setImportError(result.error)
+        return
+      }
+      setImportPreview(result.preview)
+    } catch {
+      setImportError('Failed to parse the Excel file.')
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
+  function confirmImport() {
+    if (!importPreview?.valid.length) {
+      closeImport()
+      return
+    }
+    const next = applyRateDatabankImport(lib, importPreview.valid)
+    persist(next, useRA)
+    closeImport()
+  }
 
   const persist = useCallback(
     (nextLib: RateLib, nextUse: boolean) => {
@@ -150,6 +196,27 @@ export function RateLibraryView({
             />
             Use built-up rates in BOQ
           </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={(e) => {
+              void onImportFile(e.target.files?.[0])
+            }}
+          />
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={importBusy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {importBusy ? 'Reading…' : 'Import from Excel'}
+          </GhostButton>
+          <RatePdfImportPanel
+            projectId={project.id}
+            currency={currency}
+            onCommitted={(rateLib) => persist(rateLib, useRA)}
+          />
           <GhostButton
             className="!text-xs !py-1.5 !px-3"
             onClick={() => {
@@ -160,6 +227,127 @@ export function RateLibraryView({
           </GhostButton>
         </div>
       </div>
+
+      <Modal
+        open={!!importPreview || !!importError}
+        title="Import rate databank"
+        onClose={closeImport}
+        size="xl"
+      >
+        {importError && (
+          <div className="space-y-4">
+            <p className="text-sm text-danger">{importError}</p>
+            <p className="text-xs text-steel">
+              Expected columns: Category (Materials / Labour / Equipment), Name, Unit,
+              Unit Cost.
+            </p>
+            <div className="flex justify-end">
+              <GhostButton className="!text-xs !py-1.5 !px-3" onClick={closeImport}>
+                Close
+              </GhostButton>
+            </div>
+          </div>
+        )}
+        {importPreview && (
+          <div className="space-y-4">
+            <p className="text-xs text-steel">
+              Sheet “{importPreview.sheetName}” · {importPreview.valid.length} ready to
+              import
+              {importPreview.skipped.length
+                ? ` · ${importPreview.skipped.length} skipped`
+                : ''}
+              . Review below, then confirm to add items to the project databank.
+            </p>
+
+            {importPreview.valid.length > 0 ? (
+              <div className="border border-steel-border max-h-64 overflow-auto">
+                <DataTable compact>
+                  <DataTable.Header>
+                    <DataTable.Row>
+                      <DataTable.HeaderCell>Row</DataTable.HeaderCell>
+                      <DataTable.HeaderCell>Category</DataTable.HeaderCell>
+                      <DataTable.HeaderCell>Code</DataTable.HeaderCell>
+                      <DataTable.HeaderCell>Name</DataTable.HeaderCell>
+                      <DataTable.HeaderCell>Unit</DataTable.HeaderCell>
+                      <DataTable.HeaderCell align="right">
+                        Unit cost ({currency})
+                      </DataTable.HeaderCell>
+                    </DataTable.Row>
+                  </DataTable.Header>
+                  <DataTable.Body>
+                    {importPreview.valid.map((row) => (
+                      <DataTable.Row key={`${row.category}-${row.excelRow}-${row.resource.code}`}>
+                        <DataTable.Cell className="text-xs text-steel font-mono">
+                          {row.excelRow}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-xs capitalize">
+                          {row.category}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-xs font-mono text-chalk">
+                          {row.resource.code}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-xs">
+                          {row.resource.desc}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-xs">{row.resource.unit}</DataTable.Cell>
+                        <DataTable.Cell numeric className="text-xs font-mono">
+                          {formatMoney(row.resource.rate, currency)}
+                        </DataTable.Cell>
+                      </DataTable.Row>
+                    ))}
+                  </DataTable.Body>
+                </DataTable>
+              </div>
+            ) : (
+              <p className="text-sm text-steel">No valid rows to import.</p>
+            )}
+
+            {importPreview.skipped.length > 0 && (
+              <div>
+                <h4 className="text-[11px] uppercase tracking-[0.08em] text-steel mb-2">
+                  Skipped rows
+                </h4>
+                <div className="border border-steel-border max-h-40 overflow-auto">
+                  <DataTable compact>
+                    <DataTable.Header>
+                      <DataTable.Row>
+                        <DataTable.HeaderCell>Row</DataTable.HeaderCell>
+                        <DataTable.HeaderCell>Reason</DataTable.HeaderCell>
+                      </DataTable.Row>
+                    </DataTable.Header>
+                    <DataTable.Body>
+                      {importPreview.skipped.map((row) => (
+                        <DataTable.Row key={`skip-${row.excelRow}-${row.reason}`}>
+                          <DataTable.Cell className="text-xs font-mono text-steel">
+                            {row.excelRow}
+                          </DataTable.Cell>
+                          <DataTable.Cell className="text-xs text-danger">
+                            {row.reason}
+                          </DataTable.Cell>
+                        </DataTable.Row>
+                      ))}
+                    </DataTable.Body>
+                  </DataTable>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <GhostButton className="!text-xs !py-1.5 !px-3" onClick={closeImport}>
+                Cancel
+              </GhostButton>
+              <PrimaryButton
+                className="!text-xs !py-2"
+                disabled={!importPreview.valid.length}
+                onClick={confirmImport}
+              >
+                Import {importPreview.valid.length} item
+                {importPreview.valid.length === 1 ? '' : 's'}
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <div className="flex gap-0.5 px-6 border-b border-steel-border flex-shrink-0">
         {(
@@ -208,7 +396,7 @@ export function RateLibraryView({
                         <span className="text-steel"> / {a.unit}</span>
                       </div>
                       <div className="text-[13px] font-semibold text-ink font-mono tabular-nums">
-                        {money(a.rate, currency)}
+                        {formatMoney(a.rate, currency)}
                         <span className="text-steel font-normal ml-1">/ {a.unit}</span>
                         <span className="ml-2 text-steel">{open ? '▾' : '▸'}</span>
                       </div>
@@ -267,6 +455,10 @@ export function RateLibraryView({
                   </div>
                 ))}
               </div>
+              <p className="text-[11px] text-steel mt-3 leading-relaxed">
+                Bulk-add via Import from Excel or Import from PDF in the toolbar.
+                PDF rows are AI suggestions — review before commit.
+              </p>
             </aside>
           </div>
         )}
@@ -381,10 +573,10 @@ function BuildupTable({
           </DataTable.Cell>
           <DataTable.Cell className="text-xs text-steel">{l.unit}</DataTable.Cell>
           <DataTable.Cell numeric className="text-xs text-steel">
-            {money(l.rate, currency)}
+            {formatMoney(l.rate, currency)}
           </DataTable.Cell>
           <DataTable.Cell numeric className="text-xs">
-            {money(l.amount, currency)}
+            {formatMoney(l.amount, currency)}
           </DataTable.Cell>
           <DataTable.Cell>
             <button
@@ -423,7 +615,7 @@ function BuildupTable({
           {title.split(' /')[0]}
         </DataTable.Cell>
         <DataTable.Cell numeric className="text-xs font-bold">
-          {money(subtotal, currency)}
+          {formatMoney(subtotal, currency)}
         </DataTable.Cell>
         <DataTable.Cell />
       </DataTable.Row>
@@ -451,7 +643,7 @@ function BuildupTable({
             Prime cost
           </DataTable.Cell>
           <DataTable.Cell numeric className="text-xs font-bold">
-            {money(analysed.prime, currency)}
+            {formatMoney(analysed.prime, currency)}
           </DataTable.Cell>
           <DataTable.Cell />
         </DataTable.Row>
@@ -469,7 +661,7 @@ function BuildupTable({
             />
             <span className="text-steel ml-1">%</span>
             <div className="font-mono text-steel mt-0.5 text-xs">
-              {money(analysed.ohpAmt, currency)}
+              {formatMoney(analysed.ohpAmt, currency)}
             </div>
           </DataTable.Cell>
           <DataTable.Cell />
@@ -479,7 +671,7 @@ function BuildupTable({
             RATE per {analysed.unit}
           </DataTable.Cell>
           <DataTable.Cell numeric className="text-sm font-bold text-signal">
-            {money(analysed.rate, currency)}
+            {formatMoney(analysed.rate, currency)}
           </DataTable.Cell>
           <DataTable.Cell />
         </DataTable.Row>

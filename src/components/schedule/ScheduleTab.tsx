@@ -13,8 +13,26 @@ import {
   type FieldDef,
 } from '../../constants/elementSchemas'
 import { ELEMENT_ENGINES } from '../../elementEngines'
+import {
+  convertQuantity,
+  displayLengthLabel,
+  displayOutputLabel,
+  isMetricLengthLabel,
+  lengthFromDisplay,
+  lengthToDisplay,
+  parseUnitSystem,
+  type UnitSystem,
+} from '../../lib/units'
 import type { Instance, Project } from '../../types/api'
+import {
+  GridPlacementModal,
+  type PointPlacementResult,
+  type SpanPlacementResult,
+} from '../modals/GridPlacementModal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
+
+const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
+const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
 
 function formatQty(v: unknown, dec: number): string {
   if (v == null || typeof v !== 'number' || Number.isNaN(v)) return '—'
@@ -95,6 +113,10 @@ export function ScheduleTab({
   const qc = useQueryClient()
   const projectId = project.id
   const { schedule, runImmediate } = useAutosave()
+  const [placement, setPlacement] = useState<{
+    mode: 'point' | 'span'
+    shape: string
+  } | null>(null)
 
   const instancesQuery = useQuery({
     queryKey: ['instances', projectId, floorId, elementKey],
@@ -116,16 +138,23 @@ export function ScheduleTab({
   }, [qc, projectId, floorId, elementKey])
 
   const addMut = useMutation({
-    mutationFn: (shape: string) => {
+    mutationFn: (args: {
+      shape: string
+      geometryPatch?: Record<string, unknown>
+    }) => {
       const seed = (instancesQuery.data?.instances.length ?? 0) + 1
       const body = buildDefaultInstancePayload(
         elementKey,
-        shape,
+        args.shape,
         seed,
         project.materials.defaultConcreteGrade,
       )
+      const geometry = {
+        ...(body.geometry as Record<string, unknown>),
+        ...(args.geometryPatch || {}),
+      }
       return runImmediate(() =>
-        createInstance(projectId, { ...body, floorId }),
+        createInstance(projectId, { ...body, geometry, floorId }),
       )
     },
     onSuccess: invalidate,
@@ -166,6 +195,7 @@ export function ScheduleTab({
   }, [schema, resultsById])
 
   const geoCols = schema ? allGeoCols(schema) : []
+  const unitSystem = parseUnitSystem(project.units)
 
   if (!schema) {
     return (
@@ -200,7 +230,7 @@ export function ScheduleTab({
               <PrimaryButton
                 key={btn.shape}
                 disabled={addMut.isPending}
-                onClick={() => addMut.mutate(btn.shape)}
+                onClick={() => addMut.mutate({ shape: btn.shape })}
                 className="!text-xs !py-2"
               >
                 {btn.label}
@@ -209,15 +239,64 @@ export function ScheduleTab({
               <GhostButton
                 key={btn.shape}
                 disabled={addMut.isPending}
-                onClick={() => addMut.mutate(btn.shape)}
+                onClick={() => addMut.mutate({ shape: btn.shape })}
                 className="!text-xs !py-2"
               >
                 {btn.label}
               </GhostButton>
             ),
           )}
+          {POINT_PLACEMENT_KEYS.has(elementKey) && (
+            <GhostButton
+              disabled={addMut.isPending}
+              className="!text-xs !py-2"
+              onClick={() =>
+                setPlacement({
+                  mode: 'point',
+                  shape: schema.addButtons[0]?.shape || Object.keys(schema.shapes)[0],
+                })
+              }
+            >
+              Place at grid…
+            </GhostButton>
+          )}
+          {SPAN_PLACEMENT_KEYS.has(elementKey) && (
+            <GhostButton
+              disabled={addMut.isPending}
+              className="!text-xs !py-2"
+              onClick={() =>
+                setPlacement({
+                  mode: 'span',
+                  shape: schema.addButtons[0]?.shape || Object.keys(schema.shapes)[0],
+                })
+              }
+            >
+              Length from grid…
+            </GhostButton>
+          )}
         </div>
       </div>
+
+      <GridPlacementModal
+        open={!!placement}
+        project={project}
+        mode={placement?.mode || 'point'}
+        title={
+          placement?.mode === 'span'
+            ? 'Auto-length between grid points'
+            : 'Place at grid intersection'
+        }
+        onClose={() => setPlacement(null)}
+        onConfirm={(result) => {
+          if (!placement) return
+          const geometryPatch =
+            result.mode === 'point'
+              ? pointGeometryPatch(result)
+              : spanGeometryPatch(elementKey, result)
+          addMut.mutate({ shape: placement.shape, geometryPatch })
+          setPlacement(null)
+        }}
+      />
 
       <div className="flex-1 overflow-auto px-6 pb-8">
         {instancesQuery.isLoading && (
@@ -239,7 +318,9 @@ export function ScheduleTab({
                   {schema.hasGrade && <DataTable.HeaderCell>Grade</DataTable.HeaderCell>}
                   {schema.specList && <DataTable.HeaderCell>Spec</DataTable.HeaderCell>}
                   {geoCols.map((c) => (
-                    <DataTable.HeaderCell key={c.key}>{c.label}</DataTable.HeaderCell>
+                    <DataTable.HeaderCell key={c.key}>
+                      {displayLengthLabel(c.label, unitSystem)}
+                    </DataTable.HeaderCell>
                   ))}
                   {schema.rebarFields.map((f) => (
                     <DataTable.HeaderCell key={f.key}>{f.label}</DataTable.HeaderCell>
@@ -250,7 +331,7 @@ export function ScheduleTab({
                       align="right"
                       className={c.rebar ? 'text-chalk' : undefined}
                     >
-                      {c.label}
+                      {displayOutputLabel(c.label, c.unit, unitSystem)}
                     </DataTable.HeaderCell>
                   ))}
                   <DataTable.HeaderCell className="w-10" />
@@ -265,6 +346,7 @@ export function ScheduleTab({
                     geoCols={geoCols}
                     grades={project.materials.concreteClasses}
                     result={resultsById.get(inst.id)}
+                    unitSystem={unitSystem}
                     onPatch={(patch) => schedulePatch(inst.id, patch)}
                     onDelete={() => {
                       if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
@@ -277,15 +359,22 @@ export function ScheduleTab({
                   <DataTable.Cell colSpan={labelColSpan}>
                     Totals ({instances.reduce((s, i) => s + (i.count || 1), 0)} units)
                   </DataTable.Cell>
-                  {schema.outputCols.map((c) => (
-                    <DataTable.Cell
-                      key={c.key}
-                      numeric
-                      className={c.rebar ? 'text-chalk' : 'text-ink font-semibold'}
-                    >
-                      {formatQty(totals[c.key], c.dec)}
-                    </DataTable.Cell>
-                  ))}
+                  {schema.outputCols.map((c) => {
+                    const raw = totals[c.key]
+                    const shown =
+                      typeof raw === 'number'
+                        ? convertQuantity(raw, c.unit, unitSystem).value
+                        : raw
+                    return (
+                      <DataTable.Cell
+                        key={c.key}
+                        numeric
+                        className={c.rebar ? 'text-chalk' : 'text-ink font-semibold'}
+                      >
+                        {formatQty(shown, c.dec)}
+                      </DataTable.Cell>
+                    )
+                  })}
                   <DataTable.Cell />
                 </DataTable.Row>
               </DataTable.Footer>
@@ -303,6 +392,7 @@ function InstanceRow({
   geoCols,
   grades,
   result,
+  unitSystem,
   onPatch,
   onDelete,
 }: {
@@ -311,6 +401,7 @@ function InstanceRow({
   geoCols: { key: string; label: string }[]
   grades: string[]
   result?: Record<string, unknown>
+  unitSystem: UnitSystem
   onPatch: (patch: Record<string, unknown>) => void
   onDelete: () => void
 }) {
@@ -361,6 +452,11 @@ function InstanceRow({
             onPatch({ mark: e.target.value })
           }}
         />
+        {gridLabel(local.geometry) && (
+          <div className="mt-0.5 text-[10px] font-mono text-steel">
+            {gridLabel(local.geometry)}
+          </div>
+        )}
       </DataTable.Cell>
       <DataTable.Cell className="w-14">
         <input
@@ -444,13 +540,27 @@ function InstanceRow({
             </DataTable.Cell>
           )
         }
+        const lengthField = field && isMetricLengthLabel(field.label)
+        const stored =
+          typeof raw === 'number' ? raw : Number(field?.def ?? 0)
+        const displayVal = lengthField
+          ? lengthToDisplay(stored, unitSystem)
+          : ((raw as number) ?? field?.def)
         return (
           <DataTable.Cell key={col.key}>
             {active && field ? (
               <ScheduleInput
                 field={field}
-                value={(raw as number) ?? field.def}
-                onChange={(v) => setGeo(col.key, v)}
+                value={displayVal as number}
+                onChange={(v) => {
+                  const num = typeof v === 'number' ? v : Number(v)
+                  setGeo(
+                    col.key,
+                    lengthField
+                      ? Number(lengthFromDisplay(num || 0, unitSystem).toFixed(field.dec ?? 2))
+                      : v,
+                  )
+                }}
               />
             ) : (
               <span className="text-steel/50">—</span>
@@ -467,15 +577,22 @@ function InstanceRow({
           />
         </DataTable.Cell>
       ))}
-      {schema.outputCols.map((c) => (
-        <DataTable.Cell
-          key={c.key}
-          numeric
-          className={c.rebar ? 'text-chalk' : undefined}
-        >
-          {formatQty(result?.[c.resultKey], c.dec)}
-        </DataTable.Cell>
-      ))}
+      {schema.outputCols.map((c) => {
+        const raw = result?.[c.resultKey]
+        const shown =
+          typeof raw === 'number'
+            ? convertQuantity(raw, c.unit, unitSystem).value
+            : raw
+        return (
+          <DataTable.Cell
+            key={c.key}
+            numeric
+            className={c.rebar ? 'text-chalk' : undefined}
+          >
+            {formatQty(shown, c.dec)}
+          </DataTable.Cell>
+        )
+      })}
       <DataTable.Cell>
         <button type="button" className="text-danger text-xs" onClick={onDelete}>
           ×
@@ -483,4 +600,40 @@ function InstanceRow({
       </DataTable.Cell>
     </DataTable.Row>
   )
+}
+
+function pointGeometryPatch(result: PointPlacementResult): Record<string, unknown> {
+  return {
+    gridX: result.gridX,
+    gridY: result.gridY,
+    gridRef: result.gridRef,
+  }
+}
+
+function spanGeometryPatch(
+  elementKey: string,
+  result: SpanPlacementResult,
+): Record<string, unknown> {
+  const lengthKey = elementKey === 'BEAMS' ? 'spanLength' : 'length'
+  return {
+    [lengthKey]: Number(result.lengthM.toFixed(2)),
+    gridStart: result.gridStart,
+    gridEnd: result.gridEnd,
+  }
+}
+
+function gridLabel(geometry?: Record<string, unknown> | null): string | null {
+  if (!geometry) return null
+  if (typeof geometry.gridRef === 'string' && geometry.gridRef) {
+    return geometry.gridRef
+  }
+  if (
+    typeof geometry.gridStart === 'string' &&
+    typeof geometry.gridEnd === 'string' &&
+    geometry.gridStart &&
+    geometry.gridEnd
+  ) {
+    return `${geometry.gridStart}→${geometry.gridEnd}`
+  }
+  return null
 }

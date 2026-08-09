@@ -2,6 +2,18 @@ import type { RateLib } from './rateLib'
 
 export type AxisLine = { label: string; spacing: number }
 
+export type ConcreteMix = {
+  cement: number
+  sand: number
+  agg: number
+  water: number
+}
+
+export type MortarMix = {
+  cementBagsPerM3: number
+  sandM3PerM3: number
+}
+
 export type ProjectMaterials = {
   concreteClasses: string[]
   defaultConcreteGrade: string
@@ -13,6 +25,27 @@ export type ProjectMaterials = {
   paintCoats: number
   tileWastage: number
   earthworkBulkingFactor: number
+  /** Draft kg/m² — BOM uses applied_* until revision bump. */
+  verticalBracingRate: number
+  soffitPropRate: number
+  appliedVerticalBracingRate: number
+  appliedSoffitPropRate: number
+  concreteMixes: Record<string, ConcreteMix>
+  appliedConcreteMixes: Record<string, ConcreteMix>
+  mortarMix: MortarMix
+  appliedMortarMix: MortarMix
+  appliedStoneMortarRatio: string
+  appliedStoneMortarFraction: number
+}
+
+export type CurrencyConversionLogEntry = {
+  id: string
+  fromCurrency: string
+  toCurrency: string
+  rateUsed: number
+  rateDate: string
+  timestamp: string | Date
+  triggeredBy: string
 }
 
 export type Project = {
@@ -23,6 +56,7 @@ export type Project = {
   contractor: string
   location: string
   currency: string
+  /** Canonical `metric` | `imperial` (legacy strings still parsed). */
   units: string
   preparedBy: string
   revision: string
@@ -31,6 +65,7 @@ export type Project = {
   rateLib: RateLib
   useRateAnalysis: boolean
   grid: { xAxes: AxisLine[]; yAxes: AxisLine[] }
+  currencyConversionLog?: CurrencyConversionLogEntry[]
   createdAt?: string
   updatedAt?: string
 }
@@ -41,8 +76,8 @@ export type ProjectSummary = {
   number: string
   client: string
   currency: string
-  updatedAt: string
-  createdAt: string
+  updatedAt?: string
+  createdAt?: string
 }
 
 export type DashboardProjectCard = {
@@ -58,8 +93,8 @@ export type DashboardProjectCard = {
   pricedTotal: number
   unpricedCount: number
   verified: boolean
-  updatedAt: string
-  createdAt: string
+  updatedAt?: string
+  createdAt?: string
 }
 
 export type DashboardPayload = {
@@ -67,7 +102,7 @@ export type DashboardPayload = {
     activeProjects: number
     elementsModelled: number
     handCalcVerifiedPct: number
-    handCalcVerifiedIsPlaceholder: boolean
+    handCalcVerifiedIsPlaceholder?: boolean
     totalPricedValue: number
     currency: string
     pendingReview: number
@@ -103,5 +138,6 @@ export type Instance = {
 export type CalcResultRow = {
   instanceId: string
   mark: string
+  count: number
   result: Record<string, unknown>
 }

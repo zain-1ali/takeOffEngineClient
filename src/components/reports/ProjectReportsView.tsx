@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getReports } from '../../api/projectsApi'
 import { exportExcel, exportPDF } from '../../lib/exportBills'
+import { formatMoney, parseUnitSystem } from '../../lib/units'
 import type { Project } from '../../types/api'
 import { RateLibraryView } from '../rates/RateLibraryView'
 import { GhostButton, PrimaryButton, StatCard } from '../ui'
 import { LabourTables } from './LabourTables'
+import { ManualBoqForm } from './ManualBoqForm'
 import { ReportTable } from './ReportTable'
 
 type ReportSubTab = 'boq' | 'bom' | 'labour'
@@ -31,6 +33,8 @@ export function ProjectReportsView({
       scope,
       scope === 'floor' ? floorId : 'all',
       project.useRateAnalysis,
+      project.units,
+      project.currency,
       project.updatedAt,
     ],
     queryFn: () =>
@@ -41,13 +45,24 @@ export function ProjectReportsView({
   })
 
   const exportQuery = useQuery({
-    queryKey: ['reports', project.id, 'project', 'export', project.updatedAt],
+    queryKey: [
+      'reports',
+      project.id,
+      'project',
+      'export',
+      project.units,
+      project.currency,
+      project.updatedAt,
+    ],
     queryFn: () => getReports(project.id, { scope: 'project' }),
     enabled: panel === 'export',
   })
 
   const data = query.data
   const currency = data?.currency || project.currency
+  const unitSystem = data?.unitSystem || parseUnitSystem(project.units)
+  const volUnit = unitSystem === 'imperial' ? 'ft³' : 'm³'
+  const areaUnit = unitSystem === 'imperial' ? 'ft²' : 'm²'
 
   if (panel === 'rates') {
     return <RateLibraryView project={project} onBack={() => setPanel('reports')} />
@@ -152,12 +167,12 @@ export function ProjectReportsView({
               <StatCard
                 label="Concrete"
                 value={data.summary.totalConcrete.toFixed(2)}
-                unit="m³"
+                unit={volUnit}
               />
               <StatCard
                 label="Formwork"
                 value={data.summary.totalFormwork.toFixed(2)}
-                unit="m²"
+                unit={areaUnit}
               />
               <StatCard
                 label="Steel"
@@ -167,10 +182,7 @@ export function ProjectReportsView({
               <StatCard label="Units" value={String(data.summary.totalUnits)} />
               <StatCard
                 label="Priced total"
-                value={`${currency} ${data.summary.pricedTotal.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`}
+                value={formatMoney(data.summary.pricedTotal, currency)}
               />
             </div>
 
@@ -202,11 +214,18 @@ export function ProjectReportsView({
             )}
 
             {sub === 'boq' && (
-              <ReportTable
-                lines={data.boq}
-                currency={currency}
-                emptyMessage="No quantities to bill in this scope."
-              />
+              <div className="space-y-4">
+                <ManualBoqForm
+                  project={project}
+                  floorId={floorId}
+                  scope={scope}
+                />
+                <ReportTable
+                  lines={data.boq}
+                  currency={currency}
+                  emptyMessage="No quantities to bill in this scope."
+                />
+              </div>
             )}
             {sub === 'bom' && (
               <ReportTable

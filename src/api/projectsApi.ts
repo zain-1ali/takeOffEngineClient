@@ -1,4 +1,4 @@
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import type {
   CalcResultRow,
   DashboardPayload,
@@ -7,7 +7,10 @@ import type {
   Project,
   ProjectSummary,
 } from '../types/api'
+import type { ManualBoqInput, ManualBoqItem } from '../types/manualBoq'
+import type { RatePdfImportJob, RatePdfSuggestion } from '../types/ratePdfImport'
 import type { ProjectReports } from '../types/reports'
+import type { RateLib } from '../types/rateLib'
 
 export function listProjects() {
   return api<{ projects: ProjectSummary[] }>('/api/projects')
@@ -126,4 +129,114 @@ export function getReports(
   if (params.floorId) q.set('floorId', params.floorId)
   if (params.elementKey) q.set('elementKey', params.elementKey)
   return api<ProjectReports>(`/api/projects/${projectId}/reports?${q.toString()}`)
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+
+export async function startRatePdfImport(projectId: string, file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(
+    `${API_BASE_URL}/api/projects/${projectId}/rate-lib/import-pdf`,
+    { method: 'POST', body, credentials: 'include' },
+  )
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) {
+    throw new ApiError(res.status, data?.error || `Upload failed (${res.status})`)
+  }
+  return data as { jobId: string; job: RatePdfImportJob }
+}
+
+export function getRatePdfImportJob(projectId: string, jobId: string) {
+  return api<{ job: RatePdfImportJob }>(
+    `/api/projects/${projectId}/rate-lib/import-pdf/${jobId}`,
+  )
+}
+
+export function patchRatePdfSuggestions(
+  projectId: string,
+  jobId: string,
+  suggestions: Array<Partial<RatePdfSuggestion> & { id: string }>,
+) {
+  return api<{ job: RatePdfImportJob }>(
+    `/api/projects/${projectId}/rate-lib/import-pdf/${jobId}/suggestions`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ suggestions }),
+    },
+  )
+}
+
+export function commitRatePdfImport(
+  projectId: string,
+  jobId: string,
+  suggestions: Array<Partial<RatePdfSuggestion> & { id: string }>,
+) {
+  return api<{
+    added: number
+    job: RatePdfImportJob
+    project: { id: string; rateLib: RateLib }
+  }>(`/api/projects/${projectId}/rate-lib/import-pdf/${jobId}/commit`, {
+    method: 'POST',
+    body: JSON.stringify({ suggestions }),
+  })
+}
+
+export type CurrencyQuote = {
+  quoteId: string
+  fromCurrency: string
+  toCurrency: string
+  rate: number
+  rateDate: string
+  fetchedAt: string
+}
+
+export function quoteCurrencyConversion(projectId: string, toCurrency: string) {
+  return api<{ quote: CurrencyQuote; message: string }>(
+    `/api/projects/${projectId}/convert-currency/quote`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ toCurrency }),
+    },
+  )
+}
+
+export function confirmCurrencyConversion(projectId: string, quoteId: string) {
+  return api<{
+    project: Project
+    conversion: {
+      id: string
+      fromCurrency: string
+      toCurrency: string
+      rateUsed: number
+      rateDate: string
+      timestamp: string
+      triggeredBy: string
+    }
+  }>(`/api/projects/${projectId}/convert-currency`, {
+    method: 'POST',
+    body: JSON.stringify({ quoteId }),
+  })
+}
+
+export function listManualBoqItems(projectId: string, floorId?: string) {
+  const q = floorId ? `?floorId=${encodeURIComponent(floorId)}` : ''
+  return api<{ items: ManualBoqItem[] }>(
+    `/api/projects/${projectId}/manual-boq${q}`,
+  )
+}
+
+export function createManualBoqItem(projectId: string, body: ManualBoqInput) {
+  return api<{ item: ManualBoqItem }>(`/api/projects/${projectId}/manual-boq`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteManualBoqItem(projectId: string, itemId: string) {
+  return api<{ ok: boolean }>(
+    `/api/projects/${projectId}/manual-boq/${itemId}`,
+    { method: 'DELETE' },
+  )
 }

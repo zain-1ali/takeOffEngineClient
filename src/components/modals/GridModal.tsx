@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAutosave } from '../../autosave/AutosaveContext'
+import { GridPreview } from '../../grid/GridPreview'
 import type { AxisLine, Project } from '../../types/api'
 import { GhostButton, PrimaryButton } from '../ui'
 import { Modal, inputClass } from './Modal'
@@ -119,6 +120,12 @@ export function GridModal({
           axes={yAxes}
           onChange={(axes) => updateGrid(xAxes, axes)}
         />
+      </div>
+      <div className="mt-5">
+        <p className="text-xs uppercase tracking-wider text-steel mb-2">
+          Plan preview
+        </p>
+        <GridPreview grid={{ xAxes, yAxes }} mode="preview" />
       </div>
       <div className="mt-5 flex justify-end">
         <PrimaryButton

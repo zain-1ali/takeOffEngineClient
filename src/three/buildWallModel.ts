@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { COLORS3D } from './colors';
 import { barCountForSpan } from './math';
+import { addHeightDim, addLengthDim } from './dimensions';
 import { makeBoxMesh, makeRebarBar } from './meshes';
 import { modelViewOptions } from './viewOptions';
 
@@ -50,15 +51,8 @@ export function buildWallModel(f: WallInstance): THREE.Group {
         if (bar) group.add(bar);
       }
     }
-    if (modelViewOptions.showDims) {
-      const y = -0.05;
-      const dimMat = new THREE.LineBasicMaterial({ color: 0xc9d3dc });
-      const addLine = (a: THREE.Vector3, b: THREE.Vector3) => {
-        const g = new THREE.BufferGeometry().setFromPoints([a, b]);
-        group.add(new THREE.Line(g, dimMat));
-      };
-      addLine(new THREE.Vector3(-L / 2, y, T / 2 + 0.2), new THREE.Vector3(L / 2, y, T / 2 + 0.2));
-    }
+    addLengthDim(group, L, T / 2, { offset: 0.2 });
+    addHeightDim(group, H, { x: L / 2, z: T / 2 });
   } else {
     // CURVED — build from short box segments following the arc
     const R = f.radius || 0;
@@ -88,6 +82,7 @@ export function buildWallModel(f: WallInstance): THREE.Group {
         if (bar) group.add(bar);
       }
     }
+    addHeightDim(group, H, { x: R, z: 0 });
   }
   return group;
 }

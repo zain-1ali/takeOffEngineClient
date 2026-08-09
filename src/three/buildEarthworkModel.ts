@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { COLORS3D } from './colors'
+import { addHeightDim, addPlanDims } from './dimensions'
 import { makeBoxMesh } from './meshes'
 
 export type EarthworkInstance = {
@@ -13,7 +14,7 @@ export type EarthworkInstance = {
 export function buildEarthworkModel(f: EarthworkInstance): THREE.Group {
   const width =
     f.shape === 'LINEAR_TRENCH' ? f.trenchWidth || 0 : f.width || 0
-  return makeBoxMesh(
+  const group = makeBoxMesh(
     f.length,
     f.depth,
     width,
@@ -21,4 +22,12 @@ export function buildEarthworkModel(f: EarthworkInstance): THREE.Group {
     COLORS3D.ground,
     0.55,
   )
+  addPlanDims(group, f.length, width, { y: -f.depth - 0.05 })
+  addHeightDim(
+    group,
+    f.depth,
+    { x: f.length / 2, z: width / 2 },
+    { y0: -f.depth },
+  )
+  return group
 }

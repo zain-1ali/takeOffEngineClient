@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { COLORS3D } from './colors'
+import { barCountForSpan } from './math'
+import { addHeightDim, addPlanDims } from './dimensions'
 import { makeBoxMesh, makePrismMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
@@ -12,11 +14,12 @@ export type PileInstance = {
   flangeWidth?: number
   flangeThickness?: number
   webThickness?: number
+  sectionKgPerM?: number
   cover: number
   longBarCount: number
   longBarDia: number
   linkDia: number
-  linkKgPerM: number
+  linkSpacing: number
 }
 
 function concreteModel(f: PileInstance): {
@@ -72,8 +75,8 @@ function concreteModel(f: PileInstance): {
         points,
         f.pileLength,
         0,
-        COLORS3D.concrete,
-        0.45,
+        COLORS3D.rebar,
+        0.75,
       ),
       width: b,
       depth: h,
@@ -97,29 +100,29 @@ function concreteModel(f: PileInstance): {
 export function buildPileModel(f: PileInstance): THREE.Group {
   const result = concreteModel(f)
   const group = result.group
-  if (!modelViewOptions.showRebar) return group
 
-  const cover = f.cover / 1000
-  const radiusX = Math.max(0.02, result.width / 2 - cover)
-  const radiusZ = Math.max(0.02, result.depth / 2 - cover)
-  for (let i = 0; i < f.longBarCount; i++) {
-    const angle = (i * Math.PI * 2) / Math.max(1, f.longBarCount)
-    const x = Math.cos(angle) * radiusX
-    const z = Math.sin(angle) * radiusZ
-    const bar = makeRebarBar(
-      x,
-      cover,
-      z,
-      x,
-      f.pileLength - cover,
-      z,
-      f.longBarDia,
-    )
-    if (bar) group.add(bar)
-  }
+  // H-section piles are structural steel only — no RC cage.
+  if (modelViewOptions.showRebar && f.shape !== 'H_SECTION') {
+    const cover = f.cover / 1000
+    const radiusX = Math.max(0.02, result.width / 2 - cover)
+    const radiusZ = Math.max(0.02, result.depth / 2 - cover)
+    for (let i = 0; i < f.longBarCount; i++) {
+      const angle = (i * Math.PI * 2) / Math.max(1, f.longBarCount)
+      const x = Math.cos(angle) * radiusX
+      const z = Math.sin(angle) * radiusZ
+      const bar = makeRebarBar(
+        x,
+        cover,
+        z,
+        x,
+        f.pileLength - cover,
+        z,
+        f.longBarDia,
+      )
+      if (bar) group.add(bar)
+    }
 
-  if (f.linkKgPerM > 0) {
-    const linkCount = Math.max(2, Math.ceil(f.pileLength))
+    const linkCount = barCountForSpan(f.pileLength, f.linkSpacing)
     for (let i = 0; i < linkCount; i++) {
       const geometry = new THREE.TorusGeometry(
         Math.min(radiusX, radiusZ),
@@ -130,10 +133,17 @@ export function buildPileModel(f: PileInstance): THREE.Group {
       const material = new THREE.MeshLambertMaterial({ color: COLORS3D.rebar })
       const ring = new THREE.Mesh(geometry, material)
       ring.rotation.x = Math.PI / 2
+      const usable = Math.max(0, f.pileLength - 2 * cover)
       ring.position.y =
-        cover + (i * (f.pileLength - 2 * cover)) / (linkCount - 1 || 1)
+        cover + (linkCount <= 1 ? usable / 2 : (i * usable) / (linkCount - 1))
       group.add(ring)
     }
   }
+
+  addPlanDims(group, result.width, result.depth)
+  addHeightDim(group, f.pileLength, {
+    x: result.width / 2,
+    z: result.depth / 2,
+  })
   return group
 }

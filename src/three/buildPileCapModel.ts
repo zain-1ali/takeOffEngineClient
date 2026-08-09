@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { COLORS3D } from './colors'
 import { barCountForSpan } from './math'
+import { addHeightDim, addPlanDims } from './dimensions'
 import { makePrismMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
@@ -161,6 +162,12 @@ export function buildPileCapModel(f: PileCapInstance): THREE.Group {
       }
     }
   }
+
+  addPlanDims(group, footprint.meshLength, footprint.meshWidth)
+  addHeightDim(group, f.thickness, {
+    x: footprint.meshLength / 2,
+    z: footprint.meshWidth / 2,
+  })
 
   return group
 }

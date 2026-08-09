@@ -3,6 +3,7 @@
  * Signature unchanged: (instance) => THREE.Group
  */
 import * as THREE from 'three';
+import { addPlanDims } from './dimensions';
 import { makeBoxMesh, makeFrustumMesh } from './meshes';
 import { materials3D } from './viewOptions';
 
@@ -49,5 +50,6 @@ export function buildStoneModel(f: StoneStripInstance): THREE.Group {
     const bt = materials3D.blindingThickness || 0.05;
     group.add(makeBoxMesh(L, bt, stoneBaseWidth(f) + 0.1, -bt, 0x3a4550, 0.5));
   }
+  addPlanDims(group, L, stoneBaseWidth(f));
   return group;
 }

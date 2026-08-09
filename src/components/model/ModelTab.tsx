@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listInstances } from '../../api/projectsApi'
 import { ELEMENT_ENGINES } from '../../elementEngines'
+import { parseUnitSystem } from '../../lib/units'
 import { modelViewOptions } from '../../three/viewOptions'
 import type { Project } from '../../types/api'
 import { ModelViewport } from './ModelViewport'
@@ -44,10 +45,15 @@ export function ModelTab({
   elementKey: string
 }) {
   const schema = ELEMENT_ENGINES[elementKey]
+  const unitSystem = parseUnitSystem(project.units)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [showRebar, setShowRebar] = useState(modelViewOptions.showRebar)
   const [showDims, setShowDims] = useState(modelViewOptions.showDims)
   const [autoRotate, setAutoRotate] = useState(true)
+
+  useEffect(() => {
+    modelViewOptions.unitSystem = unitSystem
+  }, [unitSystem])
 
   const instancesQuery = useQuery({
     queryKey: ['instances', project.id, floorId, elementKey],
@@ -61,8 +67,9 @@ export function ModelTab({
   const selected = instances[safeIndex] || null
 
   const rebuildKey = useMemo(
-    () => `${showRebar}-${showDims}-${selected?.id ?? 'none'}-${selected?.updatedAt ?? ''}`,
-    [showRebar, showDims, selected],
+    () =>
+      `${showRebar}-${showDims}-${unitSystem}-${selected?.id ?? 'none'}-${selected?.updatedAt ?? ''}`,
+    [showRebar, showDims, unitSystem, selected],
   )
 
   function applyRebar(v: boolean) {

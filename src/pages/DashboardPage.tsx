@@ -450,7 +450,7 @@ function ProjectCard({
           </span>
         </div>
         <div className="flex justify-between items-center border-t border-steel-border pt-3 text-xs text-steel">
-          <span>{relativeTime(project.updatedAt)}</span>
+          <span>{relativeTime(project.updatedAt || '')}</span>
           <span className="font-mono text-[13px] text-chalk">
             {cardPrice(project.pricedTotal, project.currency)}
           </span>

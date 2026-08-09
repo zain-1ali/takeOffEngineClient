@@ -6,13 +6,23 @@ export function Modal({
   onClose,
   children,
   wide,
+  size = 'md',
 }: {
   open: boolean
   title: string
   onClose: () => void
   children: ReactNode
   wide?: boolean
+  /** Prefer `size` over `wide`. `wide` maps to `lg` for older call sites. */
+  size?: 'md' | 'lg' | 'xl'
 }) {
+  const resolvedSize = wide && size === 'md' ? 'lg' : size
+  const widthCls =
+    resolvedSize === 'xl'
+      ? 'w-full max-w-4xl'
+      : resolvedSize === 'lg'
+        ? 'w-full max-w-2xl'
+        : 'w-full max-w-lg'
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -33,9 +43,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`border border-steel-border bg-panel shadow-xl max-h-[90vh] overflow-auto ${
-          wide ? 'w-full max-w-2xl' : 'w-full max-w-lg'
-        }`}
+        className={`border border-steel-border bg-panel shadow-xl max-h-[90vh] overflow-auto ${widthCls}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-steel-border">
