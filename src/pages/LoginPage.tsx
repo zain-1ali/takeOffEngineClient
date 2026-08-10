@@ -24,6 +24,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setSubmitting(true)
+    
     try {
       await login(email, password)
       navigate(from, { replace: true })
