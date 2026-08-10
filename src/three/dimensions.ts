@@ -40,7 +40,7 @@ function makeDimLabel(text: string): THREE.Sprite {
   ctx.font = '600 28px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
   const metrics = ctx.measureText(text)
   canvas.width = Math.ceil(metrics.width + padX * 2)
-  canvas.height = 40
+  canvas.height = Math.ceil(28 + padY * 2)
   ctx.font = '600 28px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
   ctx.fillStyle = 'rgba(15, 23, 32, 0.72)'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
