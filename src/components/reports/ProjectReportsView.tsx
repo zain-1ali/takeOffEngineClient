@@ -6,20 +6,24 @@ import { formatMoney, parseUnitSystem } from '../../lib/units'
 import type { Project } from '../../types/api'
 import { RateLibraryView } from '../rates/RateLibraryView'
 import { GhostButton, PrimaryButton, StatCard } from '../ui'
+import { CostPlanExportScreen } from './CostPlanExportScreen'
 import { LabourTables } from './LabourTables'
 import { ManualBoqForm } from './ManualBoqForm'
 import { ReportTable } from './ReportTable'
 
-type ReportSubTab = 'boq' | 'bom' | 'labour'
+type ReportSubTab = 'boq' | 'bom' | 'labour' | 'costplan'
 type Scope = 'floor' | 'project'
-type Panel = 'reports' | 'rates' | 'export'
+type Panel = 'reports' | 'rates'
 
 export function ProjectReportsView({
   project,
   floorId,
+  onDone,
 }: {
   project: Project
   floorId: string
+  /** Leave the export / reports surface (e.g. back to modelling). */
+  onDone?: () => void
 }) {
   const [scope, setScope] = useState<Scope>('floor')
   const [sub, setSub] = useState<ReportSubTab>('boq')
@@ -44,20 +48,6 @@ export function ProjectReportsView({
       }),
   })
 
-  const exportQuery = useQuery({
-    queryKey: [
-      'reports',
-      project.id,
-      'project',
-      'export',
-      project.units,
-      project.currency,
-      project.updatedAt,
-    ],
-    queryFn: () => getReports(project.id, { scope: 'project' }),
-    enabled: panel === 'export',
-  })
-
   const data = query.data
   const currency = data?.currency || project.currency
   const unitSystem = data?.unitSystem || parseUnitSystem(project.units)
@@ -68,14 +58,26 @@ export function ProjectReportsView({
     return <RateLibraryView project={project} onBack={() => setPanel('reports')} />
   }
 
+  // Unified Cost Plan export screen (theme + preview + action bar)
+  if (sub === 'costplan') {
+    return (
+      <CostPlanExportScreen
+        project={project}
+        floorId={floorId}
+        onDone={() => {
+          if (onDone) onDone()
+          else setSub('boq')
+        }}
+      />
+    )
+  }
+
   async function doExport(kind: 'pdf' | 'xlsx') {
     setExportBusy(true)
     try {
-      const reports =
-        exportQuery.data || (await getReports(project.id, { scope: 'project' }))
+      const reports = await getReports(project.id, { scope: 'project' })
       if (kind === 'pdf') exportPDF(project, reports)
       else exportExcel(project, reports)
-      setPanel('reports')
     } catch {
       alert('Export failed — could not load project reports.')
     } finally {
@@ -89,7 +91,7 @@ export function ProjectReportsView({
         <div>
           <h2 className="font-display text-xl font-semibold text-ink">Project reports</h2>
           <p className="text-[12.5px] text-steel mt-1">
-            Consolidated BOQ / BOM / Labour
+            Consolidated BOQ / BOM / Labour / Cost Plan
             {project.useRateAnalysis !== false
               ? ' · priced with built-up rates'
               : ' · priced from rate book'}
@@ -101,13 +103,25 @@ export function ProjectReportsView({
             Rate Library
           </GhostButton>
           <GhostButton
-            className={`!text-xs !py-1.5 !px-3 ${
-              panel === 'export' ? '!border-ink text-ink' : ''
-            }`}
-            onClick={() => setPanel(panel === 'export' ? 'reports' : 'export')}
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExport('pdf')}
           >
-            Export
+            BOQ PDF
           </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExport('xlsx')}
+          >
+            BOQ Excel
+          </GhostButton>
+          <PrimaryButton
+            className="!text-xs !py-1.5 !px-3"
+            onClick={() => setSub('costplan')}
+          >
+            Cost Plan export
+          </PrimaryButton>
           <span className="text-xs text-steel ml-2">Scope</span>
           {(
             [
@@ -130,28 +144,6 @@ export function ProjectReportsView({
           ))}
         </div>
       </div>
-
-      {panel === 'export' && (
-        <div className="px-6 py-3 border-b border-steel-border bg-panel flex flex-wrap gap-3 items-center">
-          <p className="text-xs text-steel mr-2">
-            Export whole-project bills (BOQ, BOM, Labour; Excel includes Rate Analysis).
-          </p>
-          <PrimaryButton
-            className="!text-xs !py-1.5 !px-3"
-            disabled={exportBusy}
-            onClick={() => void doExport('pdf')}
-          >
-            PDF (print)
-          </PrimaryButton>
-          <GhostButton
-            className="!text-xs !py-1.5 !px-3"
-            disabled={exportBusy}
-            onClick={() => void doExport('xlsx')}
-          >
-            Excel (.xlsx)
-          </GhostButton>
-        </div>
-      )}
 
       <div className="flex-1 overflow-auto p-6 space-y-5">
         {query.isLoading && (
@@ -192,6 +184,7 @@ export function ProjectReportsView({
                   ['boq', 'BOQ'],
                   ['bom', 'BOM'],
                   ['labour', 'Labour'],
+                  ['costplan', 'Cost Plan'],
                 ] as const
               ).map(([id, label]) => (
                 <button

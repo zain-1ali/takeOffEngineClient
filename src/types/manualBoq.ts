@@ -18,6 +18,7 @@ export type ManualBoqItem = {
   gangDescription: string | null
   appliedUnitRate: number | null
   appliedAtRevision: string | null
+  uniformatCode?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -34,4 +35,7 @@ export type ManualBoqInput = {
   labourMode?: ManualBoqLabourMode
   outputPerDay?: number | null
   gangDescription?: string | null
+  uniformatCode?: string | null
+  /** Direct rate when linkKind is none (lump-sum Item lines). */
+  unitRate?: number | null
 }

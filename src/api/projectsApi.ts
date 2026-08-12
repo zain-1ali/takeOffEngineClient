@@ -8,6 +8,8 @@ import type {
   ProjectSummary,
 } from '../types/api'
 import type { ManualBoqInput, ManualBoqItem } from '../types/manualBoq'
+import type { CostPlanPayload } from '../types/costPlan'
+import type { IfcImportJob, IfcWallSuggestion } from '../types/ifcImport'
 import type { RatePdfImportJob, RatePdfSuggestion } from '../types/ratePdfImport'
 import type { ProjectReports } from '../types/reports'
 import type { RateLib } from '../types/rateLib'
@@ -131,6 +133,18 @@ export function getReports(
   return api<ProjectReports>(`/api/projects/${projectId}/reports?${q.toString()}`)
 }
 
+export function getCostPlan(
+  projectId: string,
+  params?: { scope?: 'floor' | 'project'; floorId?: string },
+) {
+  const q = new URLSearchParams()
+  q.set('scope', params?.scope || 'project')
+  if (params?.floorId) q.set('floorId', params.floorId)
+  return api<CostPlanPayload>(
+    `/api/projects/${projectId}/cost-plan?${q.toString()}`,
+  )
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 
 export async function startRatePdfImport(projectId: string, file: File) {
@@ -239,4 +253,48 @@ export function deleteManualBoqItem(projectId: string, itemId: string) {
     `/api/projects/${projectId}/manual-boq/${itemId}`,
     { method: 'DELETE' },
   )
+}
+
+export async function startIfcImport(projectId: string, file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(
+    `${API_BASE_URL}/api/projects/${projectId}/ifc-import`,
+    { method: 'POST', body, credentials: 'include' },
+  )
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) {
+    throw new ApiError(res.status, data?.error || `Upload failed (${res.status})`)
+  }
+  return data as { jobId: string; job: IfcImportJob }
+}
+
+export function getIfcImportJob(projectId: string, jobId: string) {
+  return api<{ job: IfcImportJob }>(
+    `/api/projects/${projectId}/ifc-import/${jobId}`,
+  )
+}
+
+export function commitIfcImport(
+  projectId: string,
+  jobId: string,
+  floorId: string,
+  suggestions: Array<Partial<IfcWallSuggestion> & { id: string }>,
+) {
+  return api<{
+    added: number
+    skipped: string[]
+    instances: Array<{
+      id: string
+      mark: string
+      shape: string
+      floorId: string
+      elementKey: string
+    }>
+    job: IfcImportJob
+  }>(`/api/projects/${projectId}/ifc-import/${jobId}/commit`, {
+    method: 'POST',
+    body: JSON.stringify({ floorId, suggestions }),
+  })
 }

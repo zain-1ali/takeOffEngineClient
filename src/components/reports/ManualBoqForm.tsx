@@ -5,6 +5,10 @@ import {
   deleteManualBoqItem,
   listManualBoqItems,
 } from '../../api/projectsApi'
+import {
+  formatUniformatOption,
+  UNIFORMAT_CODE_OPTIONS,
+} from '../../lib/uniformatOptions'
 import { formatMoney } from '../../lib/units'
 import type { Project } from '../../types/api'
 import type {
@@ -69,8 +73,10 @@ export function ManualBoqForm({
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState('')
-  const [unit, setUnit] = useState('nr')
+  const [unit, setUnit] = useState('Item')
   const [quantity, setQuantity] = useState(1)
+  const [unitRate, setUnitRate] = useState<number | ''>('')
+  const [uniformatCode, setUniformatCode] = useState('')
   const [rateKey, setRateKey] = useState('')
   const [rateQuery, setRateQuery] = useState('')
   const [labourMode, setLabourMode] = useState<ManualBoqLabourMode>('none')
@@ -96,6 +102,12 @@ export function ManualBoqForm({
       ),
   })
 
+  function invalidateReports() {
+    void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
+    void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+    void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+  }
+
   const createMut = useMutation({
     mutationFn: () => {
       let linkKind: ManualBoqLinkKind = 'none'
@@ -113,7 +125,7 @@ export function ManualBoqForm({
       return createManualBoqItem(project.id, {
         floorId: scope === 'floor' ? floorId : null,
         description: description.trim(),
-        unit: unit.trim() || 'nr',
+        unit: unit.trim() || 'Item',
         quantity: Number(quantity) || 0,
         linkKind,
         analysisCode,
@@ -126,20 +138,25 @@ export function ManualBoqForm({
             : null,
         gangDescription:
           labourMode === 'outputRate' ? gangDescription.trim() || null : null,
+        uniformatCode: uniformatCode.trim() || null,
+        unitRate:
+          linkKind === 'none' && unitRate !== '' ? Number(unitRate) : null,
       })
     },
     onSuccess: () => {
       setError(null)
       setDescription('')
       setQuantity(1)
+      setUnit('Item')
+      setUnitRate('')
+      setUniformatCode('')
       setRateKey('')
       setRateQuery('')
       setLabourMode('none')
       setOutputPerDay('')
       setGangDescription('')
       setOpen(false)
-      void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
-      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      invalidateReports()
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : 'Could not create item')
@@ -149,8 +166,7 @@ export function ManualBoqForm({
   const delMut = useMutation({
     mutationFn: (id: string) => deleteManualBoqItem(project.id, id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
-      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      invalidateReports()
     },
   })
 
@@ -166,8 +182,9 @@ export function ManualBoqForm({
           {open ? 'Close form' : 'New BOQ item'}
         </PrimaryButton>
         <p className="text-xs text-steel">
-          Ad-hoc lines — not parametric elements. Linked rates follow the same
-          revision gate as mix ratios.
+          Ad-hoc / lump-sum lines (e.g. unit Item) — assign a UniFormat code for
+          Cost Plan grouping. Linked rates follow the same revision gate as mix
+          ratios.
         </p>
       </div>
 
@@ -179,7 +196,7 @@ export function ManualBoqForm({
                 className={inputClass}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g. Extra blinding under stairs"
+                placeholder="e.g. Survey control for setting out"
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
@@ -188,7 +205,17 @@ export function ManualBoqForm({
                   className={inputClass}
                   value={unit}
                   onChange={(e) => setUnit(e.target.value)}
+                  placeholder="Item"
+                  list="manual-boq-units"
                 />
+                <datalist id="manual-boq-units">
+                  <option value="Item" />
+                  <option value="sum" />
+                  <option value="nr" />
+                  <option value="m" />
+                  <option value="m²" />
+                  <option value="m³" />
+                </datalist>
               </Field>
               <Field label="Quantity">
                 <input
@@ -202,6 +229,23 @@ export function ManualBoqForm({
               </Field>
             </div>
           </div>
+
+          <Field label="UniFormat code (Cost Plan)">
+            <select
+              className={inputClass}
+              value={uniformatCode}
+              onChange={(e) => setUniformatCode(e.target.value)}
+            >
+              <option value="">Unclassified (Z9990)</option>
+              {UNIFORMAT_CODE_OPTIONS.filter((c) => c.code !== 'Z9990').map(
+                (c) => (
+                  <option key={c.code} value={c.code}>
+                    {formatUniformatOption(c.code, c.title)}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
 
           <Field label="Linked rate (optional — from rate databank)">
             <input
@@ -222,7 +266,7 @@ export function ManualBoqForm({
                 if (opt?.unit) setUnit(opt.unit)
               }}
             >
-              <option value="">No linked rate</option>
+              <option value="">No linked rate — enter unit rate below</option>
               {filtered.map((o) => (
                 <option key={o.key} value={o.key}>
                   {o.label}
@@ -230,6 +274,22 @@ export function ManualBoqForm({
               ))}
             </select>
           </Field>
+
+          {!selected && (
+            <Field label={`Unit rate (${project.currency})`}>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                className={inputClass}
+                value={unitRate}
+                onChange={(e) =>
+                  setUnitRate(e.target.value === '' ? '' : Number(e.target.value))
+                }
+                placeholder="Required for priced Cost Plan / BOQ amount"
+              />
+            </Field>
+          )}
 
           <div className="border border-steel-border/70 px-3 py-3 space-y-2">
             <p className="text-xs font-medium text-ink">
@@ -327,6 +387,7 @@ export function ManualBoqForm({
             <thead>
               <tr className="bg-panel-hover text-steel text-left">
                 <th className="px-3 py-2 font-medium">Description</th>
+                <th className="px-3 py-2 font-medium">UniFormat</th>
                 <th className="px-3 py-2 font-medium">Qty</th>
                 <th className="px-3 py-2 font-medium">Applied rate</th>
                 <th className="px-3 py-2 font-medium">Labour</th>
@@ -346,6 +407,9 @@ export function ManualBoqForm({
                     ) : (
                       <span className="text-steel ml-1">· project-wide</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-steel">
+                    {it.uniformatCode || 'Z9990'}
                   </td>
                   <td className="px-3 py-2 font-mono">
                     {it.quantity} {it.unit}

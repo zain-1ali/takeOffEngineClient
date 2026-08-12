@@ -37,6 +37,11 @@ export function ProjectModal({
     preparedBy: project.preparedBy,
     revision: project.revision,
     date: project.date,
+    gfaM2: project.gfaM2 ?? null,
+    designAllowancePercent: project.designAllowancePercent ?? 6,
+    overheadPercent: project.overheadPercent ?? 9,
+    profitPercent: project.profitPercent ?? 5,
+    inflationPercent: project.inflationPercent ?? 3.5,
   })
   const [materials, setMaterials] = useState<ProjectMaterials>(() =>
     ensureClientMaterials(project.materials),
@@ -59,6 +64,11 @@ export function ProjectModal({
       preparedBy: project.preparedBy,
       revision: project.revision,
       date: project.date,
+      gfaM2: project.gfaM2 ?? null,
+      designAllowancePercent: project.designAllowancePercent ?? 6,
+      overheadPercent: project.overheadPercent ?? 9,
+      profitPercent: project.profitPercent ?? 5,
+      inflationPercent: project.inflationPercent ?? 3.5,
     })
     setMaterials(ensureClientMaterials(project.materials))
     setEarthworkBulkingPercent(
@@ -214,6 +224,76 @@ export function ProjectModal({
             className={inputClass}
             value={form.date}
             onChange={(e) => set('date', e.target.value)}
+          />
+        </Field>
+        <Field label="Gross Floor Area (m²)">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            className={inputClass}
+            placeholder="Optional — enables Rate/m² on Cost Plan"
+            value={form.gfaM2 ?? ''}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (raw === '') {
+                set('gfaM2', null)
+                return
+              }
+              const n = Number(raw)
+              set('gfaM2', Number.isFinite(n) && n > 0 ? n : null)
+            }}
+          />
+        </Field>
+        <Field label="Design Allowance (%)">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            className={inputClass}
+            value={form.designAllowancePercent}
+            onChange={(e) =>
+              set(
+                'designAllowancePercent',
+                Math.max(0, Number(e.target.value) || 0),
+              )
+            }
+          />
+        </Field>
+        <Field label="Overhead (%)">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            className={inputClass}
+            value={form.overheadPercent}
+            onChange={(e) =>
+              set('overheadPercent', Math.max(0, Number(e.target.value) || 0))
+            }
+          />
+        </Field>
+        <Field label="Profit (%)">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            className={inputClass}
+            value={form.profitPercent}
+            onChange={(e) =>
+              set('profitPercent', Math.max(0, Number(e.target.value) || 0))
+            }
+          />
+        </Field>
+        <Field label="Inflation (%)">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            className={inputClass}
+            value={form.inflationPercent}
+            onChange={(e) =>
+              set('inflationPercent', Math.max(0, Number(e.target.value) || 0))
+            }
           />
         </Field>
         <Field label="Earthworks bulking / disposal (%)">

@@ -1,6 +1,12 @@
 import * as XLSX from 'xlsx'
 import { analyseRate } from '../lib/analyseRate'
+import {
+  THEME_HEADER_TEXT,
+  resolveReportTheme,
+  type ReportThemeId,
+} from '../lib/reportThemes'
 import type { Project } from '../types/api'
+import type { CostPlanPayload, CostPlanSummaryLine } from '../types/costPlan'
 import type { ProjectReports, ReportLine } from '../types/reports'
 
 function escapeHtml(s: unknown): string {
@@ -110,6 +116,154 @@ export function exportPDF(project: Project, reports: ProjectReports) {
       `<h2>Bill of Materials</h2>${linesToHtmlTable(reports.bom, cur)}` +
       `<h2>Labour Schedule</h2>${labourToHtml(reports, cur)}` +
       `</body></html>`,
+  )
+  win.document.close()
+  setTimeout(() => {
+    win.focus()
+    win.print()
+  }, 350)
+}
+
+function costPlanLinesToHtml(
+  data: CostPlanPayload,
+  currency: string,
+): string {
+  const showRateM2 = data.gfaM2 != null && data.gfaM2 > 0
+  const rows = data.lines
+    .map((line) => {
+      if (line.kind === 'group') {
+        const cols = showRateM2 ? 7 : 6
+        return `<tr class="group-row"><td colspan="${cols}">${escapeHtml(line.description)}</td></tr>`
+      }
+      if (line.kind === 'total') {
+        return (
+          `<tr class="total-row"><td colspan="5">${escapeHtml(line.description)}</td>` +
+          `<td class="num">${escapeHtml(money(line.amount))}</td>` +
+          (showRateM2
+            ? `<td class="num">${escapeHtml(money(line.ratePerM2))}</td>`
+            : '') +
+          `</tr>`
+        )
+      }
+      return (
+        `<tr class="item-row"><td>${escapeHtml(line.ref || '')}</td>` +
+        `<td>${line.source === 'MANUAL' ? '<span class="manual">Manual</span> ' : ''}${escapeHtml(line.description)}</td>` +
+        `<td class="num">${escapeHtml(fmtQty(line))}</td><td>${escapeHtml(line.unit || '')}</td>` +
+        `<td class="num">${escapeHtml(money(line.rate))}</td>` +
+        `<td class="num">${escapeHtml(money(line.amount))}</td>` +
+        (showRateM2
+          ? `<td class="num">${escapeHtml(money(line.ratePerM2))}</td>`
+          : '') +
+        `</tr>`
+      )
+    })
+    .join('')
+
+  const head =
+    `<tr><th>Item</th><th>Description</th><th class="num">Qty</th><th>Unit</th>` +
+    `<th class="num">Rate (${escapeHtml(currency)})</th>` +
+    `<th class="num">Amount</th>` +
+    (showRateM2 ? `<th class="num">Rate/m²</th>` : '') +
+    `</tr>`
+
+  return `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`
+}
+
+function cascadeToHtml(
+  lines: CostPlanSummaryLine[],
+  currency: string,
+  showRateM2: boolean,
+): string {
+  const rows = lines
+    .map((line) => {
+      const cls =
+        line.kind === 'total'
+          ? 'total-row'
+          : line.kind === 'stage'
+            ? 'stage-row'
+            : 'addon-row'
+      return (
+        `<tr class="${cls}"><td>${escapeHtml(line.description)}</td>` +
+        `<td class="num">${escapeHtml(money(line.amount))}</td>` +
+        (showRateM2
+          ? `<td class="num">${escapeHtml(money(line.ratePerM2))}</td>`
+          : '') +
+        `<td class="num">${
+          line.percentOfElemental != null
+            ? escapeHtml(
+                `${line.percentOfElemental.toFixed(
+                  Number.isInteger(line.percentOfElemental) ? 0 : 2,
+                )}%`,
+              )
+            : ''
+        }</td></tr>`
+      )
+    })
+    .join('')
+
+  return (
+    `<div class="section-banner">Design Allowance / Overhead &amp; Profit / Inflation</div>` +
+    `<table><thead><tr><th>Description</th><th class="num">Amount (${escapeHtml(currency)})</th>` +
+    (showRateM2 ? `<th class="num">Rate/m²</th>` : '') +
+    `<th class="num">% of Elemental</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`
+  )
+}
+
+/** Themed Cost Plan PDF via print-window. */
+export function exportCostPlanPDF(
+  project: Project,
+  costPlan: CostPlanPayload,
+  themeId?: ReportThemeId | string | null,
+) {
+  const theme = resolveReportTheme(themeId ?? project.reportTheme)
+  const c = theme.colors
+  const cur = costPlan.currency || project.currency
+  const showRateM2 = costPlan.gfaM2 != null && costPlan.gfaM2 > 0
+  const p = project
+
+  const css =
+    `body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;font-size:11px;background:${c.paper};}` +
+    `.page{padding:20px 24px;}` +
+    `.banner{background:${c.primary};color:${THEME_HEADER_TEXT};padding:14px 18px;margin:0 0 16px;}` +
+    `.banner h1{font-size:18px;margin:0 0 4px;}` +
+    `.banner .meta{font-size:11px;opacity:.92;line-height:1.45;}` +
+    `h2{font-size:13px;margin:18px 0 8px;color:${c.secondary};border-bottom:2px solid ${c.tertiary};padding-bottom:4px;}` +
+    `table{width:100%;border-collapse:collapse;margin-bottom:12px;}` +
+    `th,td{border:1px solid #d0d7de;padding:5px 7px;text-align:left;font-size:10.5px;}` +
+    `th{background:${c.secondary};color:${THEME_HEADER_TEXT};border-color:${c.secondary};}` +
+    `td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}` +
+    `.group-row td{background:${c.tint};font-weight:bold;color:${c.secondary};text-transform:uppercase;font-size:10px;letter-spacing:.03em;}` +
+    `.total-row td{border-top:2px solid ${c.tertiary};font-weight:bold;background:${c.tint};color:${c.secondary};}` +
+    `.stage-row td{font-weight:bold;color:${c.secondary};}` +
+    `.item-row:nth-child(even) td{background:${c.tint};}` +
+    `.manual{color:${c.tertiary};font-size:9px;text-transform:uppercase;font-weight:bold;margin-right:4px;}` +
+    `.section-banner{background:${c.primary};color:${THEME_HEADER_TEXT};font-weight:bold;padding:8px 10px;margin:16px 0 0;}` +
+    `@media print{body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}`
+
+  const win = window.open('', '_blank')
+  if (!win) {
+    alert('Please allow pop-ups to export the PDF.')
+    return
+  }
+  win.document.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8">` +
+      `<title>${escapeHtml(p.name)} — Cost Plan</title>` +
+      `<style>${css}</style></head><body>` +
+      `<div class="banner"><h1>${escapeHtml(p.name)} — Cost Plan</h1>` +
+      `<div class="meta">Project ${escapeHtml(p.number)}` +
+      (p.client ? ` · Client: ${escapeHtml(p.client)}` : '') +
+      (p.location ? ` · ${escapeHtml(p.location)}` : '') +
+      `<br>Currency ${escapeHtml(cur)} · Rev ${escapeHtml(p.revision)} · ${escapeHtml(p.date)}` +
+      (p.preparedBy ? ` · Prepared by ${escapeHtml(p.preparedBy)}` : '') +
+      ` · Theme: ${escapeHtml(theme.name)}` +
+      (costPlan.gfaM2 != null ? ` · GFA ${costPlan.gfaM2} m²` : '') +
+      `</div></div>` +
+      `<div class="page">` +
+      `<h2>UniFormat II elemental costs</h2>` +
+      costPlanLinesToHtml(costPlan, cur) +
+      cascadeToHtml(costPlan.cascade.summaryLines, cur, showRateM2) +
+      `</div></body></html>`,
   )
   win.document.close()
   setTimeout(() => {

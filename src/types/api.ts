@@ -61,6 +61,15 @@ export type Project = {
   preparedBy: string
   revision: string
   date: string
+  /** Gross Floor Area (m²) for Cost Plan Rate/m². Null/undefined = omit the column. */
+  gfaM2?: number | null
+  /** Cost Plan cascade — percentage points (6 = 6%). */
+  designAllowancePercent?: number
+  overheadPercent?: number
+  profitPercent?: number
+  inflationPercent?: number
+  /** Cost Plan / bill PDF color theme id. */
+  reportTheme?: string
   materials: ProjectMaterials
   rateLib: RateLib
   useRateAnalysis: boolean
@@ -131,6 +140,8 @@ export type Instance = {
   concreteGrade: string | null
   reinforcement: Record<string, unknown> | null
   spec: string | null
+  /** UniFormat location (Walls / Slabs / Doors / Wall finishes). */
+  location: string | null
   createdAt?: string
   updatedAt?: string
 }

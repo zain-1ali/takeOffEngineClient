@@ -165,7 +165,14 @@ export default function WorkspacePage() {
 
           <div className="flex-1 min-h-0 overflow-hidden">
             {showProjectReports ? (
-              <ProjectReportsView project={project} floorId={currentFloorId} />
+              <ProjectReportsView
+                project={project}
+                floorId={currentFloorId}
+                onDone={() => {
+                  setActiveStep('model')
+                  setTab('schedule')
+                }}
+              />
             ) : (
               <>
                 {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && (

@@ -41,6 +41,13 @@ export type ElementSchema = {
   /** Extra reinforcement defaults not shown in schedule columns */
   rebarDefaults?: Record<string, unknown>
   specList?: string[]
+  /**
+   * UniFormat location options (Walls / Slabs / Doors / Wall finishes).
+   * When set, schedule shows a Location column.
+   */
+  locationOptions?: string[]
+  /** Default location when creating on a non-special floor. */
+  defaultLocation?: string
   outputCols: OutputCol[]
 }
 
@@ -439,6 +446,8 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     reportKind: 'structural',
     hasGrade: true,
     hasRebar: true,
+    locationOptions: ['On-grade', 'Elevated floor', 'Roof'],
+    defaultLocation: 'Elevated floor',
     shapes: {
       FLAT: { label: 'Flat' },
       SLOPED: { label: 'Sloped' },
@@ -660,6 +669,8 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     reportKind: 'structural',
     hasGrade: true,
     hasRebar: true,
+    locationOptions: ['Below-grade', 'Exterior', 'Interior'],
+    defaultLocation: 'Interior',
     shapes: {
       LINEAR: { label: 'Linear Shell' },
       CURVED: { label: 'Curved Core' },
@@ -770,6 +781,8 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     reportKind: 'finish',
     hasGrade: false,
     hasRebar: false,
+    locationOptions: ['Exterior', 'Interior'],
+    defaultLocation: 'Interior',
     shapes: { AREA: { label: 'Area' } },
     addButtons: [{ shape: 'AREA', label: '+ Add area', primary: true }],
     geometryByShape: {
@@ -814,6 +827,7 @@ export function buildDefaultInstancePayload(
   shape: string,
   markSeed: string | number,
   defaultConcreteGrade = 'C25/30',
+  floorId = 'GF',
 ) {
   const schema = ELEMENT_SCHEMAS[elementKey]
   if (!schema) throw new Error(`No schema for ${elementKey}`)
@@ -850,6 +864,29 @@ export function buildDefaultInstancePayload(
     geometry.hasBlinding = true
   }
 
+  let location: string | null = null
+  if (schema.locationOptions?.length) {
+    const id = floorId.trim().toUpperCase()
+    if (elementKey === 'SLABS') {
+      if (id === 'RF' || id === 'ROOF' || id.includes('ROOF')) location = 'Roof'
+      else if (
+        id === 'FDN' ||
+        id === 'GF' ||
+        id === 'G' ||
+        id === 'L00' ||
+        id === '00' ||
+        id.startsWith('FOUND') ||
+        id.includes('GROUND')
+      ) {
+        location = 'On-grade'
+      } else {
+        location = schema.defaultLocation || 'Elevated floor'
+      }
+    } else {
+      location = schema.defaultLocation || schema.locationOptions[0]
+    }
+  }
+
   return {
     elementKey,
     shape,
@@ -859,6 +896,7 @@ export function buildDefaultInstancePayload(
     reinforcement: Object.keys(reinforcement).length ? reinforcement : null,
     concreteGrade: schema.hasGrade ? defaultConcreteGrade : null,
     spec: schema.specList ? schema.specList[0] : null,
+    location,
   }
 }
 

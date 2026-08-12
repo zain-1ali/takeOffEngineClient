@@ -30,6 +30,7 @@ import {
   type SpanPlacementResult,
 } from '../modals/GridPlacementModal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import { IfcImportPanel } from './IfcImportPanel'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
@@ -148,6 +149,7 @@ export function ScheduleTab({
         args.shape,
         seed,
         project.materials.defaultConcreteGrade,
+        floorId,
       )
       const geometry = {
         ...(body.geometry as Record<string, unknown>),
@@ -209,6 +211,7 @@ export function ScheduleTab({
     3 +
     (schema.hasGrade ? 1 : 0) +
     (schema.specList ? 1 : 0) +
+    (schema.locationOptions ? 1 : 0) +
     geoCols.length +
     schema.rebarFields.length
 
@@ -245,6 +248,13 @@ export function ScheduleTab({
                 {btn.label}
               </GhostButton>
             ),
+          )}
+          {elementKey === 'WALLS' && (
+            <IfcImportPanel
+              projectId={projectId}
+              floorId={floorId}
+              onCommitted={invalidate}
+            />
           )}
           {POINT_PLACEMENT_KEYS.has(elementKey) && (
             <GhostButton
@@ -317,6 +327,9 @@ export function ScheduleTab({
                   <DataTable.HeaderCell>Shape</DataTable.HeaderCell>
                   {schema.hasGrade && <DataTable.HeaderCell>Grade</DataTable.HeaderCell>}
                   {schema.specList && <DataTable.HeaderCell>Spec</DataTable.HeaderCell>}
+                  {schema.locationOptions && (
+                    <DataTable.HeaderCell>Location</DataTable.HeaderCell>
+                  )}
                   {geoCols.map((c) => (
                     <DataTable.HeaderCell key={c.key}>
                       {displayLengthLabel(c.label, unitSystem)}
@@ -434,6 +447,7 @@ function InstanceRow({
       shape,
       local.mark.replace(/^\D+/, '') || '1',
       local.concreteGrade || 'C25/30',
+      local.floorId,
     )
     const geometry = payload.geometry as Record<string, unknown>
     const reinforcement = payload.reinforcement as Record<string, unknown> | null
@@ -515,6 +529,29 @@ function InstanceRow({
             {schema.specList.map((s) => (
               <option key={s} value={s}>
                 {s}
+              </option>
+            ))}
+          </select>
+        </DataTable.Cell>
+      )}
+      {schema.locationOptions && (
+        <DataTable.Cell className="min-w-[8rem]">
+          <select
+            className={`w-full ${fieldCls}`}
+            value={
+              local.location ||
+              schema.defaultLocation ||
+              schema.locationOptions[0]
+            }
+            onChange={(e) => {
+              const location = e.target.value
+              setLocal((l) => ({ ...l, location }))
+              onPatch({ location })
+            }}
+          >
+            {schema.locationOptions.map((loc) => (
+              <option key={loc} value={loc}>
+                {loc}
               </option>
             ))}
           </select>
