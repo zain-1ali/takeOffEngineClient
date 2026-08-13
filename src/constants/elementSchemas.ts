@@ -15,6 +15,10 @@ export type FieldDef = {
   dec?: number
   def: string | number
   options?: number[] | string[]
+  /** When true, omitted from create payload; empty schedule input clears the key. */
+  optional?: boolean
+  /** Display/store as percent (UI shows 0–100, geometry stores 0–1 fraction). */
+  uiPercent?: boolean
 }
 
 export type OutputCol = {
@@ -764,8 +768,37 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     addButtons: [{ shape: 'AREA', label: '+ Add area', primary: true }],
     geometryByShape: {
       AREA: [
+        {
+          key: 'roomLabel',
+          label: 'Room',
+          type: 'text',
+          def: '',
+          optional: true,
+        },
         { key: 'roomLength', label: 'L (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 5 },
         { key: 'roomWidth', label: 'W (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 4 },
+        { key: 'openingArea', label: 'Opng (m²)', min: 0, max: 500, step: 0.1, dec: 2, def: 0 },
+        {
+          key: 'areaOverride',
+          label: 'Override (m²)',
+          min: 0,
+          max: 5000,
+          step: 0.1,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        {
+          key: 'tileWastage',
+          label: 'Waste %',
+          min: 0,
+          max: 100,
+          step: 1,
+          dec: 0,
+          def: '',
+          optional: true,
+          uiPercent: true,
+        },
       ],
     },
     rebarFields: [],
@@ -787,9 +820,37 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     addButtons: [{ shape: 'AREA', label: '+ Add area', primary: true }],
     geometryByShape: {
       AREA: [
+        {
+          key: 'roomLabel',
+          label: 'Room',
+          type: 'text',
+          def: '',
+          optional: true,
+        },
         { key: 'wallLength', label: 'Len (m)', min: 0.5, max: 200, step: 0.1, dec: 2, def: 12 },
         { key: 'wallHeight', label: 'Ht (m)', min: 0.5, max: 12, step: 0.1, dec: 2, def: 3 },
         { key: 'openingArea', label: 'Opng (m²)', min: 0, max: 100, step: 0.1, dec: 2, def: 2.5 },
+        {
+          key: 'areaOverride',
+          label: 'Override (m²)',
+          min: 0,
+          max: 5000,
+          step: 0.1,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        {
+          key: 'tileWastage',
+          label: 'Waste %',
+          min: 0,
+          max: 100,
+          step: 1,
+          dec: 0,
+          def: '',
+          optional: true,
+          uiPercent: true,
+        },
       ],
     },
     rebarFields: [],
@@ -809,8 +870,37 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     addButtons: [{ shape: 'AREA', label: '+ Add area', primary: true }],
     geometryByShape: {
       AREA: [
+        {
+          key: 'roomLabel',
+          label: 'Room',
+          type: 'text',
+          def: '',
+          optional: true,
+        },
         { key: 'roomLength', label: 'L (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 5 },
         { key: 'roomWidth', label: 'W (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 4 },
+        { key: 'openingArea', label: 'Opng (m²)', min: 0, max: 500, step: 0.1, dec: 2, def: 0 },
+        {
+          key: 'areaOverride',
+          label: 'Override (m²)',
+          min: 0,
+          max: 5000,
+          step: 0.1,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        {
+          key: 'tileWastage',
+          label: 'Waste %',
+          min: 0,
+          max: 100,
+          step: 1,
+          dec: 0,
+          def: '',
+          optional: true,
+          uiPercent: true,
+        },
       ],
     },
     rebarFields: [],
@@ -835,6 +925,7 @@ export function buildDefaultInstancePayload(
   const geoFields = schema.geometryByShape[shape] || []
   const geometry: Record<string, unknown> = {}
   geoFields.forEach((f) => {
+    if (f.optional) return
     geometry[f.key] = Number(f.def)
   })
 

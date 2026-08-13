@@ -71,6 +71,35 @@ export function deleteFloor(projectId: string, floorDocId: string) {
   })
 }
 
+export type DuplicateFloorBody = {
+  sourceFloorId?: string
+  instanceIds?: string[]
+  targetFloorId?: string
+  newFloor?: {
+    floorId: string
+    label: string
+    elevation?: number
+    height?: number
+  }
+}
+
+export type DuplicateFloorResult = {
+  floor: Floor
+  targetFloorId: string
+  copiedCount: number
+  sourceCount: number
+  instances: Instance[]
+  calculated: { elementKey: string; results: CalcResultRow[] }[]
+}
+
+/** Full-floor or selected-instance copy. Target quantities recalculated server-side. */
+export function duplicateFloor(projectId: string, body: DuplicateFloorBody) {
+  return api<DuplicateFloorResult>(`/api/projects/${projectId}/floors/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function listInstances(
   projectId: string,
   params?: { floorId?: string; elementKey?: string },

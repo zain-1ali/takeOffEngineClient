@@ -174,6 +174,8 @@ export async function exportCostPlanExcel(
   let groupSubtotalRows: number[] = []
   const allItemRows: number[] = []
   const groupTotalRows: number[] = []
+  /** Group / grand totals for the Summary block (label + Amount cell row). */
+  const summaryTotalRefs: { label: string; row: number }[] = []
   let grandTotalRow: number | null = null
 
   for (const line of costPlan.lines) {
@@ -214,10 +216,12 @@ export async function exportCostPlanExcel(
         const src = groupTotalRows.length ? groupTotalRows : allItemRows
         amtCell.value = sumFormula(src, AMT, line.amount)
         grandTotalRow = r
+        summaryTotalRefs.push({ label: desc, row: r })
       } else if (isGroupTot) {
         amtCell.value = sumFormula(groupSubtotalRows, AMT, line.amount)
         groupTotalRows.push(r)
         groupSubtotalRows = []
+        summaryTotalRefs.push({ label: desc, row: r })
       } else {
         amtCell.value = line.amount != null ? +Number(line.amount).toFixed(2) : ''
       }
@@ -512,15 +516,228 @@ export async function exportCostPlanExcel(
   setCascRateM2(sccRow)
   styleCascadeRow(ws.getRow(sccRow), { total: true })
 
-  // Note for the user
-  const noteRow = ws.addRow([])
+  // —— Summary of all totals (group + elemental + cascade) ——
+  ws.addRow([])
+  const sumBan = ws.addRow(['COST PLAN SUMMARY — ALL TOTALS'])
+  ws.mergeCells(sumBan.number, 1, sumBan.number, colCount)
+  sumBan.getCell(1).font = fontWhiteBold(11)
+  sumBan.getCell(1).fill = fillSolid(hexToArgb(c.primary))
+  sumBan.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' }
+  ws.getRow(sumBan.number).height = 22
+
+  const sumHead = ws.addRow(
+    showRateM2
+      ? ['', 'Description', '', '', '', 'Amount', 'Rate/m²']
+      : ['', 'Description', '', '', '', 'Amount'],
+  )
+  sumHead.eachCell((cell, col) => {
+    if (col === 1) return
+    cell.font = fontWhiteBold(10)
+    cell.fill = fillSolid(hexToArgb(c.secondary))
+    cell.alignment = { horizontal: col >= 6 ? 'right' : 'left' }
+    applyBorder(cell)
+  })
+
+  function addSummaryLinkedRow(
+    label: string,
+    amountExpr: string,
+    amountResult: number | null | undefined,
+    opts?: { emphasize?: boolean },
+  ) {
+    const row = ws.addRow([
+      '',
+      label,
+      '',
+      '',
+      '',
+      null,
+      ...(showRateM2 ? [null] : []),
+    ])
+    const r = row.number
+    const amt = row.getCell(AMT)
+    amt.value = formula(amountExpr, amountResult ?? undefined)
+    amt.numFmt = '#,##0.00'
+    if (showRateM2) {
+      const m2 = row.getCell(RATE_M2)
+      m2.value = formula(
+        `IF(OR(${gfaCell}="",${gfaCell}=0),"",${colLetter(AMT)}${r}/${gfaCell})`,
+      )
+      m2.numFmt = '#,##0.00'
+    }
+    row.eachCell((cell, col) => {
+      cell.font = fontDark(c, !!opts?.emphasize, 10)
+      cell.fill = fillSolid(hexToArgb(opts?.emphasize ? c.tint : c.paper))
+      cell.alignment = { horizontal: col >= 5 ? 'right' : 'left' }
+      applyBorder(cell)
+    })
+    return r
+  }
+
+  // UniFormat group totals + COST PLAN TOTAL
+  for (const ref of summaryTotalRefs) {
+    const isGrand = /COST PLAN TOTAL/i.test(ref.label)
+    addSummaryLinkedRow(
+      ref.label,
+      `${colLetter(AMT)}${ref.row}`,
+      undefined,
+      { emphasize: isGrand },
+    )
+  }
+
+  // Cascade stages (live-linked to cascade block Amount col D)
+  ws.addRow([])
+  const cascSumLabel = ws.addRow(['', 'Cascade / construction cost'])
+  ws.mergeCells(cascSumLabel.number, 2, cascSumLabel.number, colCount)
+  cascSumLabel.getCell(2).font = fontDark(c, true, 10)
+  cascSumLabel.getCell(2).fill = fillSolid(hexToArgb(c.tint))
+
+  const cascadeSummary: {
+    label: string
+    row: number
+    result: number
+    emphasize?: boolean
+  }[] = [
+    { label: 'Elemental Cost', row: elemRow, result: casc.elementalCost, emphasize: true },
+    {
+      label: `Design Allowance @ ${casc.designAllowancePercent}%`,
+      row: daRow,
+      result: casc.designAllowanceAmount,
+    },
+    {
+      label: 'Elemental Cost including Design Allowance',
+      row: edaRow,
+      result: casc.elementalWithDesignAllowance,
+      emphasize: true,
+    },
+    {
+      label: `Overheads @ ${casc.overheadPercent}%`,
+      row: ohRow,
+      result: casc.overheadAmount,
+    },
+    {
+      label: `Profit @ ${casc.profitPercent}%`,
+      row: prRow,
+      result: casc.profitAmount,
+    },
+    {
+      label: 'Construction Cost excluding Inflation',
+      row: constRow,
+      result: casc.constructionCostWithoutInflation,
+      emphasize: true,
+    },
+    {
+      label: `Inflation @ ${casc.inflationPercent}%`,
+      row: infRow,
+      result: casc.inflationAmount,
+    },
+    {
+      label: 'CONSTRUCTION COST (SCC)',
+      row: sccRow,
+      result: casc.constructionCostSCC,
+      emphasize: true,
+    },
+  ]
+
+  for (const item of cascadeSummary) {
+    addSummaryLinkedRow(item.label, `D${item.row}`, item.result, {
+      emphasize: item.emphasize,
+    })
+  }
+
+  // Dedicated Summary worksheet (one-page totals view; linked to Cost Plan)
+  const sumWs = wb.addWorksheet('Summary', {
+    views: [{ state: 'frozen', ySplit: 3 }],
+  })
+  sumWs.columns = [
+    { key: 'a', width: 52 },
+    { key: 'b', width: 16 },
+    ...(showRateM2 ? [{ key: 'c', width: 14 }] : []),
+  ]
+  sumWs.mergeCells(1, 1, 1, showRateM2 ? 3 : 2)
+  const st = sumWs.getCell(1, 1)
+  st.value = `${project.name} — Cost Plan Summary`
+  st.font = fontWhiteBold(14)
+  st.fill = fillSolid(hexToArgb(c.primary))
+  sumWs.getRow(1).height = 24
+
+  sumWs.mergeCells(2, 1, 2, showRateM2 ? 3 : 2)
+  const sm = sumWs.getCell(2, 1)
+  sm.value = `Currency ${cur} · Totals linked to the Cost Plan sheet (live formulas)`
+  sm.font = { size: 9, color: { argb: 'FFFFFFFF' }, name: 'Calibri' }
+  sm.fill = fillSolid(hexToArgb(c.primary))
+
+  const sh = sumWs.addRow(
+    showRateM2 ? ['Description', 'Amount', 'Rate/m²'] : ['Description', 'Amount'],
+  )
+  sh.eachCell((cell) => {
+    cell.font = fontWhiteBold(10)
+    cell.fill = fillSolid(hexToArgb(c.secondary))
+    applyBorder(cell)
+  })
+
+  function addSheetSummaryRow(
+    label: string,
+    amountFormula: string,
+    result: number | null | undefined,
+    emphasize?: boolean,
+  ) {
+    const row = sumWs.addRow([label, null, ...(showRateM2 ? [null] : [])])
+    const r = row.number
+    const amt = row.getCell(2)
+    amt.value = formula(amountFormula, result ?? undefined)
+    amt.numFmt = '#,##0.00'
+    if (showRateM2) {
+      const m2 = row.getCell(3)
+      m2.value = {
+        formula: `IF(OR('Cost Plan'!$B$3="",'Cost Plan'!$B$3=0),"",B${r}/'Cost Plan'!$B$3)`,
+      }
+      m2.numFmt = '#,##0.00'
+    }
+    row.eachCell((cell) => {
+      cell.font = fontDark(c, !!emphasize, 10)
+      cell.fill = fillSolid(hexToArgb(emphasize ? c.tint : c.paper))
+      applyBorder(cell)
+    })
+  }
+
+  const elHeader = sumWs.addRow(['Elemental / UniFormat totals'])
+  elHeader.getCell(1).font = fontDark(c, true, 10)
+  elHeader.getCell(1).fill = fillSolid(hexToArgb(c.tint))
+  for (const ref of summaryTotalRefs) {
+    addSheetSummaryRow(
+      ref.label,
+      `'Cost Plan'!${colLetter(AMT)}${ref.row}`,
+      undefined,
+      /COST PLAN TOTAL/i.test(ref.label),
+    )
+  }
+
+  sumWs.addRow([])
+  const cascHeader = sumWs.addRow(['Cascade / construction cost'])
+  cascHeader.getCell(1).font = fontDark(c, true, 10)
+  cascHeader.getCell(1).fill = fillSolid(hexToArgb(c.tint))
+  for (const item of cascadeSummary) {
+    addSheetSummaryRow(
+      item.label,
+      `'Cost Plan'!D${item.row}`,
+      item.result,
+      item.emphasize,
+    )
+  }
+
+  // Tip on Cost Plan sheet
+  ws.addRow([])
   const note = ws.addRow([
     '',
-    'Tip: edit Qty, Rate, GFA (B3), or cascade % Applied cells — Amounts and SCC recalculate automatically.',
+    'Tip: edit Qty, Rate, GFA (B3), or cascade % Applied cells — Amounts, Summary, and SCC recalculate automatically. See the Summary sheet for all totals.',
   ])
   ws.mergeCells(note.number, 2, note.number, Math.min(colCount, 6))
-  note.getCell(2).font = { size: 9, italic: true, color: { argb: 'FF64748B' }, name: 'Calibri' }
-  void noteRow
+  note.getCell(2).font = {
+    size: 9,
+    italic: true,
+    color: { argb: 'FF64748B' },
+    name: 'Calibri',
+  }
 
   const fname = `${(project.name || 'project').replace(/[^\w\-]+/g, '_')}_cost_plan.xlsx`
   const buffer = await wb.xlsx.writeBuffer()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   calculate,
@@ -13,6 +13,7 @@ import {
   type FieldDef,
 } from '../../constants/elementSchemas'
 import { ELEMENT_ENGINES } from '../../elementEngines'
+import { analyseRate } from '../../lib/analyseRate'
 import {
   convertQuantity,
   displayLengthLabel,
@@ -23,7 +24,8 @@ import {
   parseUnitSystem,
   type UnitSystem,
 } from '../../lib/units'
-import type { Instance, Project } from '../../types/api'
+import type { Floor, Instance, Project } from '../../types/api'
+import { DuplicateFloorModal } from '../modals/DuplicateFloorModal'
 import {
   GridPlacementModal,
   type PointPlacementResult,
@@ -40,6 +42,51 @@ function formatQty(v: unknown, dec: number): string {
   return v.toFixed(dec)
 }
 
+function formatMoney(v: number | null | undefined, currency: string): string {
+  if (v == null || Number.isNaN(v)) return '—'
+  return `${currency} ${v.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function roomLabelOf(inst: Instance): string {
+  const raw = inst.geometry?.roomLabel
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+type RoomGroup = { key: string; label: string; instances: Instance[] }
+
+function groupFinishInstances(instances: Instance[]): RoomGroup[] {
+  const byKey = new Map<string, RoomGroup>()
+  const unlabeled: Instance[] = []
+  for (const inst of instances) {
+    const label = roomLabelOf(inst)
+    if (!label) {
+      unlabeled.push(inst)
+      continue
+    }
+    const key = label.toLowerCase()
+    const existing = byKey.get(key)
+    if (existing) existing.instances.push(inst)
+    else byKey.set(key, { key, label, instances: [inst] })
+  }
+  const labeled = [...byKey.values()].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
+  )
+  if (unlabeled.length) {
+    labeled.push({ key: '', label: '', instances: unlabeled })
+  }
+  return labeled
+}
+
+function finishBoqRateCode(elementKey: string): string | null {
+  if (elementKey === 'FLOOR_FINISH') return 'floorFinish'
+  if (elementKey === 'WALL_FINISH') return 'wallFinish'
+  if (elementKey === 'CEILING_FINISH') return 'ceilingFinish'
+  return null
+}
+
 const fieldCls =
   'w-full min-w-[4.5rem] border border-steel-border bg-panel px-1.5 py-1 text-xs font-mono text-ink outline-none'
 
@@ -54,7 +101,8 @@ function ScheduleInput({
   onChange: (v: string | number) => void
   disabled?: boolean
 }) {
-  const cls = fieldCls
+  const cls =
+    field.type === 'text' ? `${fieldCls} min-w-[8rem] font-sans` : fieldCls
   if (field.type === 'select' && field.options) {
     return (
       <select
@@ -103,10 +151,12 @@ function ScheduleInput({
 
 export function ScheduleTab({
   project,
+  floors,
   floorId,
   elementKey,
 }: {
   project: Project
+  floors: Floor[]
   floorId: string
   elementKey: string
 }) {
@@ -118,6 +168,8 @@ export function ScheduleTab({
     mode: 'point' | 'span'
     shape: string
   } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [dupOpen, setDupOpen] = useState(false)
 
   const instancesQuery = useQuery({
     queryKey: ['instances', projectId, floorId, elementKey],
@@ -175,6 +227,9 @@ export function ScheduleTab({
   )
 
   const instances = instancesQuery.data?.instances ?? []
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [floorId, elementKey])
   const resultsById = useMemo(() => {
     const m = new Map<string, Record<string, unknown>>()
     calcQuery.data?.results.forEach((r) => m.set(r.instanceId, r.result))
@@ -198,6 +253,17 @@ export function ScheduleTab({
 
   const geoCols = schema ? allGeoCols(schema) : []
   const unitSystem = parseUnitSystem(project.units)
+  const isFinish = schema?.reportKind === 'finish'
+  const roomGroups = useMemo(
+    () => (isFinish ? groupFinishInstances(instances) : null),
+    [isFinish, instances],
+  )
+  const finishUnitRate = useMemo(() => {
+    const code = finishBoqRateCode(elementKey)
+    if (!code) return null
+    const analysed = analyseRate(code, project.rateLib)
+    return analysed && analysed.rate > 0 ? analysed.rate : null
+  }, [elementKey, project.rateLib])
 
   if (!schema) {
     return (
@@ -208,12 +274,28 @@ export function ScheduleTab({
   }
 
   const labelColSpan =
-    3 +
+    4 +
     (schema.hasGrade ? 1 : 0) +
     (schema.specList ? 1 : 0) +
     (schema.locationOptions ? 1 : 0) +
     geoCols.length +
     schema.rebarFields.length
+
+  const allSelected =
+    instances.length > 0 && instances.every((i) => selectedIds.has(i.id))
+
+  function toggleSelect(id: string, on: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(on: boolean) {
+    setSelectedIds(on ? new Set(instances.map((i) => i.id)) : new Set())
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -249,6 +331,14 @@ export function ScheduleTab({
               </GhostButton>
             ),
           )}
+          <GhostButton
+            disabled={selectedIds.size === 0}
+            className="!text-xs !py-2"
+            onClick={() => setDupOpen(true)}
+          >
+            Duplicate selected…
+            {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </GhostButton>
           {elementKey === 'WALLS' && (
             <IfcImportPanel
               projectId={projectId}
@@ -287,6 +377,19 @@ export function ScheduleTab({
         </div>
       </div>
 
+      <DuplicateFloorModal
+        open={dupOpen}
+        onClose={() => {
+          setDupOpen(false)
+          setSelectedIds(new Set())
+        }}
+        projectId={projectId}
+        floors={floors}
+        sourceFloorId={floorId}
+        instanceIds={[...selectedIds]}
+        title="Duplicate selected to floor"
+      />
+
       <GridPlacementModal
         open={!!placement}
         project={project}
@@ -322,6 +425,15 @@ export function ScheduleTab({
             <DataTable compact>
               <DataTable.Header>
                 <DataTable.Row>
+                  <DataTable.HeaderCell className="w-8">
+                    <input
+                      type="checkbox"
+                      className="accent-signal"
+                      checked={allSelected}
+                      onChange={(e) => toggleSelectAll(e.target.checked)}
+                      title="Select all"
+                    />
+                  </DataTable.HeaderCell>
                   <DataTable.HeaderCell>Mark</DataTable.HeaderCell>
                   <DataTable.HeaderCell>No.</DataTable.HeaderCell>
                   <DataTable.HeaderCell>Shape</DataTable.HeaderCell>
@@ -351,21 +463,98 @@ export function ScheduleTab({
                 </DataTable.Row>
               </DataTable.Header>
               <DataTable.Body>
-                {instances.map((inst) => (
-                  <InstanceRow
-                    key={inst.id}
-                    inst={inst}
-                    schema={schema}
-                    geoCols={geoCols}
-                    grades={project.materials.concreteClasses}
-                    result={resultsById.get(inst.id)}
-                    unitSystem={unitSystem}
-                    onPatch={(patch) => schedulePatch(inst.id, patch)}
-                    onDelete={() => {
-                      if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
-                    }}
-                  />
-                ))}
+                {(roomGroups ?? [{ key: '', label: '', instances }]).map((group) => {
+                  const areaCol = schema.outputCols.find((c) => c.key === 'area')
+                  let groupArea = 0
+                  if (areaCol) {
+                    for (const inst of group.instances) {
+                      const v = resultsById.get(inst.id)?.[areaCol.resultKey]
+                      if (typeof v === 'number') groupArea += v
+                    }
+                  }
+                  const groupCost =
+                    finishUnitRate != null ? groupArea * finishUnitRate : null
+                  const showRoomChrome = Boolean(group.label)
+                  const areaShown =
+                    areaCol && typeof groupArea === 'number'
+                      ? convertQuantity(groupArea, areaCol.unit, unitSystem).value
+                      : null
+                  return (
+                    <Fragment key={group.key || '__ungrouped'}>
+                      {showRoomChrome && (
+                        <DataTable.Row className="bg-panel/80">
+                          <DataTable.Cell
+                            colSpan={labelColSpan}
+                            className="!py-2 border-l-[3px] border-l-signal"
+                          >
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink">
+                              Room · {group.label}
+                            </span>
+                            <span className="ml-2 text-[11px] text-steel">
+                              {group.instances.length} finish
+                              {group.instances.length === 1 ? '' : 'es'}
+                            </span>
+                            <span className="ml-3 text-[11px] tabular-nums text-steel">
+                              {formatMoney(groupCost, project.currency)}
+                            </span>
+                          </DataTable.Cell>
+                          {schema.outputCols.map((c) => (
+                            <DataTable.Cell key={c.key} numeric className="!py-2">
+                              {c.key === 'area' && areaCol
+                                ? formatQty(areaShown, areaCol.dec)
+                                : ''}
+                            </DataTable.Cell>
+                          ))}
+                          <DataTable.Cell className="!py-2" />
+                        </DataTable.Row>
+                      )}
+                      {group.instances.map((inst) => (
+                        <InstanceRow
+                          key={inst.id}
+                          inst={inst}
+                          schema={schema}
+                          geoCols={geoCols}
+                          grades={project.materials.concreteClasses}
+                          defaultTileWastage={project.materials.tileWastage}
+                          result={resultsById.get(inst.id)}
+                          unitSystem={unitSystem}
+                          roomGrouped={showRoomChrome}
+                          selected={selectedIds.has(inst.id)}
+                          onSelectedChange={(on) => toggleSelect(inst.id, on)}
+                          onPatch={(patch) => schedulePatch(inst.id, patch)}
+                          onDelete={() => {
+                            if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
+                          }}
+                        />
+                      ))}
+                      {showRoomChrome && (
+                        <DataTable.Row className="bg-panel/50">
+                          <DataTable.Cell
+                            colSpan={labelColSpan}
+                            className="!py-1.5 border-l-[3px] border-l-signal text-[11px] text-steel"
+                          >
+                            {group.label} · room total
+                            <span className="ml-3 font-semibold tabular-nums text-ink">
+                              {formatMoney(groupCost, project.currency)}
+                            </span>
+                          </DataTable.Cell>
+                          {schema.outputCols.map((c) => (
+                            <DataTable.Cell
+                              key={c.key}
+                              numeric
+                              className="!py-1.5 font-semibold tabular-nums"
+                            >
+                              {c.key === 'area' && areaCol
+                                ? formatQty(areaShown, areaCol.dec)
+                                : ''}
+                            </DataTable.Cell>
+                          ))}
+                          <DataTable.Cell className="!py-1.5" />
+                        </DataTable.Row>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </DataTable.Body>
               <DataTable.Footer>
                 <DataTable.Row totals>
@@ -404,8 +593,12 @@ function InstanceRow({
   schema,
   geoCols,
   grades,
+  defaultTileWastage,
   result,
   unitSystem,
+  roomGrouped = false,
+  selected = false,
+  onSelectedChange,
   onPatch,
   onDelete,
 }: {
@@ -413,8 +606,12 @@ function InstanceRow({
   schema: (typeof ELEMENT_ENGINES)[string]
   geoCols: { key: string; label: string }[]
   grades: string[]
+  defaultTileWastage: number
   result?: Record<string, unknown>
   unitSystem: UnitSystem
+  roomGrouped?: boolean
+  selected?: boolean
+  onSelectedChange?: (on: boolean) => void
   onPatch: (patch: Record<string, unknown>) => void
   onDelete: () => void
 }) {
@@ -423,9 +620,18 @@ function InstanceRow({
 
   const shapeFields = schema.geometryByShape[local.shape] || []
   const shapeKeys = new Set(shapeFields.map((f) => f.key))
+  const usingAreaOverride = (() => {
+    const v = local.geometry?.areaOverride
+    return v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0
+  })()
 
   function setGeo(key: string, value: unknown) {
-    const geometry = { ...(local.geometry || {}), [key]: value }
+    const geometry = { ...(local.geometry || {}) }
+    if (value === '' || value == null) {
+      delete geometry[key]
+    } else {
+      geometry[key] = value
+    }
     setLocal((l) => ({ ...l, geometry }))
     onPatch({ geometry })
   }
@@ -456,7 +662,15 @@ function InstanceRow({
   }
 
   return (
-    <DataTable.Row>
+    <DataTable.Row className={roomGrouped ? 'border-l-[3px] border-l-signal/40' : undefined}>
+      <DataTable.Cell className="w-8">
+        <input
+          type="checkbox"
+          className="accent-signal"
+          checked={selected}
+          onChange={(e) => onSelectedChange?.(e.target.checked)}
+        />
+      </DataTable.Cell>
       <DataTable.Cell className="sticky left-0 bg-bg">
         <input
           className={`${fieldCls} w-16`}
@@ -578,27 +792,85 @@ function InstanceRow({
           )
         }
         const lengthField = field && isMetricLengthLabel(field.label)
-        const stored =
-          typeof raw === 'number' ? raw : Number(field?.def ?? 0)
-        const displayVal = lengthField
-          ? lengthToDisplay(stored, unitSystem)
-          : ((raw as number) ?? field?.def)
+        const isOverrideField = col.key === 'areaOverride'
+        const isWasteField = Boolean(field?.uiPercent)
+        const hasStored =
+          raw != null && raw !== '' && !(typeof raw === 'number' && Number.isNaN(raw))
+
+        let displayVal: string | number = ''
+        if (active && field) {
+          if (field.type === 'text') {
+            displayVal = hasStored ? String(raw) : ''
+          } else if (isWasteField) {
+            const frac = hasStored ? Number(raw) : defaultTileWastage
+            displayVal = Math.round(frac * 100)
+          } else if (field.optional && !hasStored) {
+            displayVal = ''
+          } else if (lengthField) {
+            const stored =
+              typeof raw === 'number' ? raw : Number(field.def ?? 0)
+            displayVal = lengthToDisplay(stored, unitSystem)
+          } else {
+            displayVal = (hasStored ? (raw as number) : field.def) as number
+          }
+        }
+
         return (
-          <DataTable.Cell key={col.key}>
+          <DataTable.Cell
+            key={col.key}
+            className={col.key === 'roomLabel' ? 'min-w-[8rem]' : undefined}
+          >
             {active && field ? (
-              <ScheduleInput
-                field={field}
-                value={displayVal as number}
-                onChange={(v) => {
-                  const num = typeof v === 'number' ? v : Number(v)
-                  setGeo(
-                    col.key,
-                    lengthField
-                      ? Number(lengthFromDisplay(num || 0, unitSystem).toFixed(field.dec ?? 2))
-                      : v,
-                  )
-                }}
-              />
+              <div className="flex flex-col gap-0.5">
+                <ScheduleInput
+                  field={field}
+                  value={displayVal}
+                  onChange={(v) => {
+                    if (field.type === 'text') {
+                      setGeo(col.key, String(v ?? '').trim() ? String(v) : '')
+                      return
+                    }
+                    if (v === '' || v == null) {
+                      setGeo(col.key, '')
+                      return
+                    }
+                    const num = typeof v === 'number' ? v : Number(v)
+                    if (Number.isNaN(num)) {
+                      setGeo(col.key, '')
+                      return
+                    }
+                    if (isWasteField) {
+                      setGeo(col.key, Math.max(0, num) / 100)
+                      return
+                    }
+                    setGeo(
+                      col.key,
+                      lengthField
+                        ? Number(
+                            lengthFromDisplay(num || 0, unitSystem).toFixed(
+                              field.dec ?? 2,
+                            ),
+                          )
+                        : num,
+                    )
+                  }}
+                />
+                {isOverrideField && usingAreaOverride && (
+                  <span className="text-[9px] font-sans uppercase tracking-wide text-signal">
+                    Using override
+                  </span>
+                )}
+                {isWasteField && !hasStored && (
+                  <span className="text-[9px] font-sans text-steel">
+                    Project default
+                  </span>
+                )}
+                {isWasteField && hasStored && (
+                  <span className="text-[9px] font-sans uppercase tracking-wide text-signal">
+                    Instance
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="text-steel/50">—</span>
             )}
@@ -620,13 +892,34 @@ function InstanceRow({
           typeof raw === 'number'
             ? convertQuantity(raw, c.unit, unitSystem).value
             : raw
+        const showOverrideBadge =
+          c.key === 'area' &&
+          (usingAreaOverride || result?.areaFromOverride === true)
         return (
           <DataTable.Cell
             key={c.key}
             numeric
             className={c.rebar ? 'text-chalk' : undefined}
           >
-            {formatQty(shown, c.dec)}
+            <div className="flex flex-col items-end gap-0.5">
+              <span>{formatQty(shown, c.dec)}</span>
+              {showOverrideBadge && (
+                <span
+                  className="text-[9px] font-sans uppercase tracking-wide text-signal"
+                  title="Net area from Override (m²), not L×W − openings"
+                >
+                  Override
+                </span>
+              )}
+              {!showOverrideBadge && c.key === 'area' && schema.reportKind === 'finish' && (
+                <span
+                  className="text-[9px] font-sans text-steel"
+                  title="Net area from dimensions minus openings"
+                >
+                  Calculated
+                </span>
+              )}
+            </div>
           </DataTable.Cell>
         )
       })}

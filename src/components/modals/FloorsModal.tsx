@@ -4,6 +4,7 @@ import { createFloor, deleteFloor } from '../../api/projectsApi'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import type { Floor } from '../../types/api'
 import { PrimaryButton } from '../ui'
+import { DuplicateFloorModal } from './DuplicateFloorModal'
 import { Field, Modal, inputClass } from './Modal'
 
 export function FloorsModal({
@@ -20,6 +21,7 @@ export function FloorsModal({
   const qc = useQueryClient()
   const { schedule, runImmediate, flush } = useAutosave()
   const [draft, setDraft] = useState({ floorId: '', label: '', elevation: 0, height: 3 })
+  const [duplicateSource, setDuplicateSource] = useState<string | null>(null)
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['project', projectId] })
 
@@ -60,7 +62,7 @@ export function FloorsModal({
               <th className="p-2">Label</th>
               <th className="p-2">Elev.</th>
               <th className="p-2">Height</th>
-              <th className="p-2 w-16" />
+              <th className="p-2 w-40" />
             </tr>
           </thead>
           <tbody>
@@ -69,6 +71,7 @@ export function FloorsModal({
                 key={f.id}
                 floor={f}
                 onPatch={(body) => patchFloor(f.id, body)}
+                onDuplicate={() => setDuplicateSource(f.floorId)}
                 onDelete={() => {
                   if (confirm(`Delete floor ${f.floorId}? Instances on it will be removed.`)) {
                     remove.mutate(f.id)
@@ -79,6 +82,15 @@ export function FloorsModal({
           </tbody>
         </table>
       </div>
+
+      <DuplicateFloorModal
+        open={!!duplicateSource}
+        onClose={() => setDuplicateSource(null)}
+        projectId={projectId}
+        floors={floors}
+        sourceFloorId={duplicateSource || undefined}
+        title="Duplicate floor"
+      />
 
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
         <Field label="New ID">
@@ -130,10 +142,12 @@ export function FloorsModal({
 function FloorRow({
   floor,
   onPatch,
+  onDuplicate,
   onDelete,
 }: {
   floor: Floor
   onPatch: (body: Partial<Floor>) => void
+  onDuplicate: () => void
   onDelete: () => void
 }) {
   const [label, setLabel] = useState(floor.label)
@@ -185,7 +199,14 @@ function FloorRow({
           }}
         />
       </td>
-      <td className="p-2">
+      <td className="p-2 whitespace-nowrap">
+        <button
+          type="button"
+          className="text-xs text-signal-text mr-2"
+          onClick={onDuplicate}
+        >
+          Duplicate
+        </button>
         <button type="button" className="text-xs text-danger" onClick={onDelete}>
           Delete
         </button>

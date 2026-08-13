@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getReports } from '../../api/projectsApi'
-import { exportExcel, exportPDF } from '../../lib/exportBills'
+import {
+  exportAllBillExcels,
+  exportAllBillPDFs,
+  exportBillExcel,
+  exportBillPDF,
+  type BillExportKind,
+} from '../../lib/exportBills'
 import { formatMoney, parseUnitSystem } from '../../lib/units'
 import type { Project } from '../../types/api'
 import { RateLibraryView } from '../rates/RateLibraryView'
@@ -72,12 +78,32 @@ export function ProjectReportsView({
     )
   }
 
-  async function doExport(kind: 'pdf' | 'xlsx') {
+  async function loadExportReports() {
+    return getReports(project.id, {
+      scope,
+      floorId: scope === 'floor' ? floorId : undefined,
+    })
+  }
+
+  async function doExportAll(format: 'pdf' | 'xlsx') {
     setExportBusy(true)
     try {
-      const reports = await getReports(project.id, { scope: 'project' })
-      if (kind === 'pdf') exportPDF(project, reports)
-      else exportExcel(project, reports)
+      const reports = await loadExportReports()
+      if (format === 'pdf') exportAllBillPDFs(project, reports)
+      else exportAllBillExcels(project, reports)
+    } catch {
+      alert('Export failed — could not load project reports.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  async function doExportOne(format: 'pdf' | 'xlsx', bill: BillExportKind) {
+    setExportBusy(true)
+    try {
+      const reports = await loadExportReports()
+      if (format === 'pdf') exportBillPDF(project, reports, bill)
+      else exportBillExcel(project, reports, bill)
     } catch {
       alert('Export failed — could not load project reports.')
     } finally {
@@ -105,16 +131,58 @@ export function ProjectReportsView({
           <GhostButton
             className="!text-xs !py-1.5 !px-3"
             disabled={exportBusy}
-            onClick={() => void doExport('pdf')}
+            onClick={() => void doExportOne('pdf', 'boq')}
           >
             BOQ PDF
           </GhostButton>
           <GhostButton
             className="!text-xs !py-1.5 !px-3"
             disabled={exportBusy}
-            onClick={() => void doExport('xlsx')}
+            onClick={() => void doExportOne('pdf', 'bom')}
+          >
+            BOM PDF
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportOne('pdf', 'labour')}
+          >
+            Labour PDF
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportOne('xlsx', 'boq')}
           >
             BOQ Excel
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportOne('xlsx', 'bom')}
+          >
+            BOM Excel
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportOne('xlsx', 'labour')}
+          >
+            Labour Excel
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportAll('xlsx')}
+          >
+            All Excel (3)
+          </GhostButton>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            disabled={exportBusy}
+            onClick={() => void doExportAll('pdf')}
+          >
+            All PDF (3)
           </GhostButton>
           <PrimaryButton
             className="!text-xs !py-1.5 !px-3"
@@ -233,6 +301,7 @@ export function ProjectReportsView({
                 trades={data.labour.trades}
                 totalManDays={data.labour.totalManDays}
                 totalCost={data.labour.totalCost}
+                byFloor={data.labour.byFloor}
                 currency={currency}
               />
             )}

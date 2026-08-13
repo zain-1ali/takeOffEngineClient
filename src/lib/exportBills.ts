@@ -1,5 +1,4 @@
 import * as XLSX from 'xlsx'
-import { analyseRate } from '../lib/analyseRate'
 import {
   THEME_HEADER_TEXT,
   resolveReportTheme,
@@ -50,17 +49,91 @@ function linesToHtmlTable(lines: ReportLine[], currency: string): string {
   )
 }
 
+export type BillExportKind = 'boq' | 'bom' | 'labour'
+
+const BILL_TITLES: Record<BillExportKind, string> = {
+  boq: 'Bill of Quantities',
+  bom: 'Bill of Materials',
+  labour: 'Labour Schedule',
+}
+
+function billCss(): string {
+  return (
+    'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;}' +
+    'h1{font-size:20px;margin:0 0 4px;}h2{font-size:15px;margin:22px 0 8px;border-bottom:2px solid #333;padding-bottom:4px;}' +
+    'h3{font-size:13px;margin:16px 0 6px;}' +
+    '.meta{color:#555;font-size:12px;margin-bottom:6px;line-height:1.5;}' +
+    'table{width:100%;border-collapse:collapse;margin-bottom:10px;}' +
+    'th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;font-size:11px;}' +
+    'th{background:#f0f0f0;} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}' +
+    '.group-row td{background:#eaeaea;font-weight:bold;}' +
+    '.total-row td{border-top:2px solid #333;font-weight:bold;background:#f7f7f7;}' +
+    '.section-label{font-weight:bold;margin:12px 0 4px;font-size:12px;}'
+  )
+}
+
+function projectMetaHtml(project: Project, currency: string): string {
+  const p = project
+  return (
+    `<h1>${escapeHtml(p.name)}</h1>` +
+    `<div class="meta">Project ${escapeHtml(p.number)}` +
+    (p.client ? ` &nbsp;·&nbsp; Client: ${escapeHtml(p.client)}` : '') +
+    (p.location ? ` &nbsp;·&nbsp; ${escapeHtml(p.location)}` : '') +
+    `<br>Currency ${escapeHtml(currency)}` +
+    ` &nbsp;·&nbsp; Rev ${escapeHtml(p.revision)} &nbsp;·&nbsp; ${escapeHtml(p.date)}` +
+    (p.preparedBy ? ` &nbsp;·&nbsp; Prepared by ${escapeHtml(p.preparedBy)}` : '') +
+    `</div>`
+  )
+}
+
 function labourToHtml(reports: ProjectReports, currency: string): string {
-  const actRows = reports.labour.activities
-    .map(
-      (a) =>
-        `<tr><td>${escapeHtml(a.ref)}</td><td>${escapeHtml(a.activity)}</td>` +
-        `<td class="num">${a.qty.toFixed(2)}</td><td>${escapeHtml(a.unit)}</td>` +
-        `<td>${escapeHtml(a.outputRate)}</td><td>${escapeHtml(a.gang)}</td>` +
-        `<td class="num">${a.days}</td></tr>`,
-    )
+  const floors =
+    reports.labour.byFloor && reports.labour.byFloor.length
+      ? reports.labour.byFloor
+      : [
+          {
+            floorId: reports.floorId || 'All',
+            activities: reports.labour.activities,
+            trades: reports.labour.trades,
+            totalManDays: reports.labour.totalManDays,
+            totalCost: reports.labour.totalCost,
+          },
+        ]
+
+  const floorBlocks = floors
+    .map((f) => {
+      const actRows = f.activities
+        .map(
+          (a) =>
+            `<tr><td>${escapeHtml(a.ref)}</td><td>${escapeHtml(a.activity)}</td>` +
+            `<td class="num">${a.qty.toFixed(2)}</td><td>${escapeHtml(a.unit)}</td>` +
+            `<td>${escapeHtml(a.outputRate)}</td><td>${escapeHtml(a.gang)}</td>` +
+            `<td class="num">${a.days}</td></tr>`,
+        )
+        .join('')
+      const tradeRows = f.trades
+        .map(
+          (t) =>
+            `<tr><td>${escapeHtml(t.trade)}</td><td class="num">${t.manDays}</td>` +
+            `<td class="num">${money(t.dayRate)}</td><td class="num">${money(t.cost)}</td></tr>`,
+        )
+        .join('')
+      return (
+        `<h3>Floor ${escapeHtml(f.floorId)} — resource loading</h3>` +
+        `<table><thead><tr><th>Item</th><th>Activity</th><th class="num">Qty</th><th>Unit</th>` +
+        `<th>Output rate</th><th>Gang / crew</th><th class="num">Days</th></tr></thead>` +
+        `<tbody>${actRows || '<tr><td colspan="7">No activities</td></tr>'}</tbody></table>` +
+        `<div class="section-label">Trade summary — ${escapeHtml(f.floorId)} (${escapeHtml(currency)})</div>` +
+        `<table style="max-width:480px"><thead><tr><th>Trade</th><th class="num">Man-days</th>` +
+        `<th class="num">Day rate</th><th class="num">Cost</th></tr></thead>` +
+        `<tbody>${tradeRows}` +
+        `<tr class="total-row"><td>Floor total</td><td class="num">${f.totalManDays}</td>` +
+        `<td></td><td class="num">${money(f.totalCost)}</td></tr></tbody></table>`
+      )
+    })
     .join('')
-  const tradeRows =
+
+  const projectTradeRows =
     reports.labour.trades
       .map(
         (t) =>
@@ -72,56 +145,58 @@ function labourToHtml(reports: ProjectReports, currency: string): string {
     `<td></td><td class="num">${money(reports.labour.totalCost)}</td></tr>`
 
   return (
-    `<table><thead><tr><th>Item</th><th>Activity</th><th class="num">Qty</th><th>Unit</th>` +
-    `<th>Output rate</th><th>Gang</th><th class="num">Days</th></tr></thead>` +
-    `<tbody>${actRows}</tbody></table>` +
-    `<div class="section-label">Labour Summary by Trade &amp; Cost (${escapeHtml(currency)})</div>` +
+    floorBlocks +
+    `<div class="section-label">Project labour summary by trade (${escapeHtml(currency)})</div>` +
     `<table style="max-width:480px"><thead><tr><th>Trade</th><th class="num">Man-days</th>` +
     `<th class="num">Day rate</th><th class="num">Cost</th></tr></thead>` +
-    `<tbody>${tradeRows}</tbody></table>`
+    `<tbody>${projectTradeRows}</tbody></table>`
   )
 }
 
-/** PDF via print-window — port of AgileQS-Takeoff.html exportPDF */
-export function exportPDF(project: Project, reports: ProjectReports) {
-  const p = project
-  const cur = reports.currency || p.currency
-  const css =
-    'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;}' +
-    'h1{font-size:20px;margin:0 0 4px;}h2{font-size:15px;margin:22px 0 8px;border-bottom:2px solid #333;padding-bottom:4px;}' +
-    '.meta{color:#555;font-size:12px;margin-bottom:6px;line-height:1.5;}' +
-    'table{width:100%;border-collapse:collapse;margin-bottom:10px;}' +
-    'th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;font-size:11px;}' +
-    'th{background:#f0f0f0;} td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}' +
-    '.group-row td{background:#eaeaea;font-weight:bold;}' +
-    '.total-row td{border-top:2px solid #333;font-weight:bold;background:#f7f7f7;}' +
-    '.section-label{font-weight:bold;margin:12px 0 4px;font-size:12px;}'
+function openPrintDocument(title: string, bodyHtml: string) {
   const win = window.open('', '_blank')
   if (!win) {
     alert('Please allow pop-ups to export the PDF.')
     return
   }
   win.document.write(
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(p.name)} — Bills</title>` +
-      `<style>${css}</style></head><body>` +
-      `<h1>${escapeHtml(p.name)}</h1>` +
-      `<div class="meta">Project ${escapeHtml(p.number)}` +
-      (p.client ? ` &nbsp;·&nbsp; Client: ${escapeHtml(p.client)}` : '') +
-      (p.location ? ` &nbsp;·&nbsp; ${escapeHtml(p.location)}` : '') +
-      `<br>Currency ${escapeHtml(cur)}` +
-      ` &nbsp;·&nbsp; Rev ${escapeHtml(p.revision)} &nbsp;·&nbsp; ${escapeHtml(p.date)}` +
-      (p.preparedBy ? ` &nbsp;·&nbsp; Prepared by ${escapeHtml(p.preparedBy)}` : '') +
-      `</div>` +
-      `<h2>Bill of Quantities</h2>${linesToHtmlTable(reports.boq, cur)}` +
-      `<h2>Bill of Materials</h2>${linesToHtmlTable(reports.bom, cur)}` +
-      `<h2>Labour Schedule</h2>${labourToHtml(reports, cur)}` +
-      `</body></html>`,
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
+      `<style>${billCss()}</style></head><body>${bodyHtml}</body></html>`,
   )
   win.document.close()
   setTimeout(() => {
     win.focus()
     win.print()
   }, 350)
+}
+
+/** Single-bill PDF (standalone document). */
+export function exportBillPDF(
+  project: Project,
+  reports: ProjectReports,
+  kind: BillExportKind,
+) {
+  const cur = reports.currency || project.currency
+  const title = `${project.name} — ${BILL_TITLES[kind]}`
+  let body =
+    projectMetaHtml(project, cur) + `<h2>${escapeHtml(BILL_TITLES[kind])}</h2>`
+  if (kind === 'boq') body += linesToHtmlTable(reports.boq, cur)
+  else if (kind === 'bom') body += linesToHtmlTable(reports.bom, cur)
+  else body += labourToHtml(reports, cur)
+  openPrintDocument(title, body)
+}
+
+/** Download three separate PDF print documents (BOQ, BOM, Labour). */
+export function exportAllBillPDFs(project: Project, reports: ProjectReports) {
+  const kinds: BillExportKind[] = ['boq', 'bom', 'labour']
+  kinds.forEach((kind, i) => {
+    setTimeout(() => exportBillPDF(project, reports, kind), i * 450)
+  })
+}
+
+/** @deprecated Use exportAllBillPDFs — kept as alias. */
+export function exportPDF(project: Project, reports: ProjectReports) {
+  exportAllBillPDFs(project, reports)
 }
 
 function costPlanLinesToHtml(
@@ -299,77 +374,180 @@ function linesToAoa(
   return aoa
 }
 
-/** Excel via SheetJS — port of AgileQS-Takeoff.html exportExcel, fed by API reports */
-export function exportExcel(project: Project, reports: ProjectReports) {
+function projectInfoAoa(project: Project, currency: string): (string | number)[][] {
   const p = project
-  const cur = reports.currency || p.currency
-  const info: (string | number)[][] = [
+  return [
     ['Project', p.name],
     ['Number', p.number],
     ['Client', p.client],
     ['Contractor', p.contractor],
     ['Location', p.location],
-    ['Currency', cur],
+    ['Currency', currency],
     ['Revision', p.revision],
     ['Date', p.date],
     ['Prepared by', p.preparedBy],
   ]
+}
 
-  const boqAoa = linesToAoa(reports.boq, cur)
-  const bomAoa = linesToAoa(reports.bom, cur, [
-    'Item',
-    'Material',
-    'Qty',
-    'Unit',
-    `Rate (${cur})`,
-    `Amount (${cur})`,
-  ])
+function safeFileBase(project: Project): string {
+  return (project.name || 'project').replace(/[^\w\-]+/g, '_')
+}
 
-  const labAoa: (string | number)[][] = [
-    ['Trade', 'Man-days', `Day rate (${cur})`, `Cost (${cur})`],
+function labourAoa(reports: ProjectReports, currency: string): (string | number)[][] {
+  const aoa: (string | number)[][] = [
+    [
+      'Floor',
+      'Item',
+      'Activity',
+      'Qty',
+      'Unit',
+      'Output rate',
+      'Gang / crew',
+      'Days',
+    ],
   ]
-  reports.labour.trades.forEach((t) => {
-    labAoa.push([t.trade, t.manDays, t.dayRate, +t.cost.toFixed(2)])
-  })
-  labAoa.push(['Total', reports.labour.totalManDays, '', +reports.labour.totalCost.toFixed(2)])
+  const floors =
+    reports.labour.byFloor && reports.labour.byFloor.length
+      ? reports.labour.byFloor
+      : [
+          {
+            floorId: reports.floorId || 'All',
+            activities: reports.labour.activities,
+            trades: reports.labour.trades,
+            totalManDays: reports.labour.totalManDays,
+            totalCost: reports.labour.totalCost,
+          },
+        ]
 
-  const raAoa: (string | number)[][] = [
-    ['Item', 'Unit', 'Materials', 'Labour', 'Equipment', 'Prime', 'OH&P', `Rate (${cur})`],
-  ]
-  Object.keys(p.rateLib?.analyses || {}).forEach((code) => {
-    const a = analyseRate(code, p.rateLib)
-    if (a) {
-      raAoa.push([
-        a.label,
+  floors.forEach((f) => {
+    aoa.push([`Floor ${f.floorId}`, '', '', '', '', '', '', ''])
+    f.activities.forEach((a) => {
+      aoa.push([
+        f.floorId,
+        a.ref,
+        a.activity,
+        +a.qty.toFixed(2),
         a.unit,
-        +a.matCost.toFixed(2),
-        +a.labCost.toFixed(2),
-        +a.eqCost.toFixed(2),
-        +a.prime.toFixed(2),
-        +a.ohpAmt.toFixed(2),
-        +a.rate.toFixed(2),
+        a.outputRate,
+        a.gang,
+        a.days,
       ])
-    }
+    })
+    aoa.push([
+      f.floorId,
+      '',
+      `Floor ${f.floorId} — trade roll-up`,
+      '',
+      '',
+      '',
+      '',
+      '',
+    ])
+    f.trades.forEach((t) => {
+      aoa.push([
+        f.floorId,
+        '',
+        t.trade,
+        t.manDays,
+        'man-days',
+        '',
+        '',
+        '',
+      ])
+    })
+    aoa.push([])
   })
 
-  const fname = `${(p.name || 'project').replace(/[^\w\-]+/g, '_')}_bills.xlsx`
+  aoa.push(['Project trade summary', '', '', '', '', '', '', ''])
+  aoa.push(['', 'Trade', 'Man-days', `Day rate (${currency})`, `Cost (${currency})`, '', '', ''])
+  reports.labour.trades.forEach((t) => {
+    aoa.push(['', t.trade, t.manDays, t.dayRate, +t.cost.toFixed(2), '', '', ''])
+  })
+  aoa.push([
+    '',
+    'Total',
+    reports.labour.totalManDays,
+    '',
+    +reports.labour.totalCost.toFixed(2),
+    '',
+    '',
+    '',
+  ])
+  return aoa
+}
 
+function writeWorkbook(
+  fname: string,
+  sheets: { name: string; aoa: (string | number)[][] }[],
+) {
   try {
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(info), 'Project Info')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(boqAoa), 'BOQ')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bomAoa), 'BOM')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(labAoa), 'Labour')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(raAoa), 'Rate Analysis')
+    sheets.forEach((s) => {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name)
+    })
     XLSX.writeFile(wb, fname)
   } catch {
-    const csv = boqAoa
+    const csv = sheets[0].aoa
       .map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
       .join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = fname.replace('.xlsx', '.csv')
+    a.download = fname.replace(/\.xlsx$/i, '.csv')
     a.click()
   }
+}
+
+/** Single-bill Excel (standalone workbook). */
+export function exportBillExcel(
+  project: Project,
+  reports: ProjectReports,
+  kind: BillExportKind,
+) {
+  const cur = reports.currency || project.currency
+  const base = safeFileBase(project)
+  const info = projectInfoAoa(project, cur)
+
+  if (kind === 'boq') {
+    writeWorkbook(`${base}_BOQ.xlsx`, [
+      { name: 'Project Info', aoa: info },
+      { name: 'BOQ', aoa: linesToAoa(reports.boq, cur) },
+    ])
+    return
+  }
+  if (kind === 'bom') {
+    writeWorkbook(`${base}_BOM.xlsx`, [
+      { name: 'Project Info', aoa: info },
+      {
+        name: 'BOM',
+        aoa: linesToAoa(reports.bom, cur, [
+          'Item',
+          'Material',
+          'Qty',
+          'Unit',
+          `Rate (${cur})`,
+          `Amount (${cur})`,
+        ]),
+      },
+    ])
+    return
+  }
+
+  writeWorkbook(`${base}_Labour.xlsx`, [
+    { name: 'Project Info', aoa: info },
+    { name: 'Labour', aoa: labourAoa(reports, cur) },
+  ])
+}
+
+/** Download three separate Excel files (BOQ, BOM, Labour). */
+export function exportAllBillExcels(project: Project, reports: ProjectReports) {
+  const kinds: BillExportKind[] = ['boq', 'bom', 'labour']
+  kinds.forEach((kind, i) => {
+    setTimeout(() => exportBillExcel(project, reports, kind), i * 200)
+  })
+}
+
+/** @deprecated Use exportAllBillExcels — kept as alias. */
+export function exportExcel(project: Project, reports: ProjectReports) {
+  exportAllBillExcels(project, reports)
 }

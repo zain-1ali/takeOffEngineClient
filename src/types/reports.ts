@@ -19,8 +19,10 @@ export type LabourActivity = {
   qty: number
   unit: string
   outputRate: string
+  /** Crew composition, e.g. "1 Mason + 2 Labourer". */
   gang: string
   days: number
+  floorId?: string | null
   source?: ReportSource
 }
 
@@ -30,6 +32,14 @@ export type TradeSummary = {
   dayRate: number
   cost: number
   source?: ReportSource
+}
+
+export type LabourFloorLoad = {
+  floorId: string
+  activities: LabourActivity[]
+  trades: TradeSummary[]
+  totalManDays: number
+  totalCost: number
 }
 
 export type ElementReportBundle = {
@@ -71,6 +81,7 @@ export type ProjectReports = {
     trades: TradeSummary[]
     totalManDays: number
     totalCost: number
+    byFloor?: LabourFloorLoad[]
   }
   byElement: ElementReportBundle[]
 }

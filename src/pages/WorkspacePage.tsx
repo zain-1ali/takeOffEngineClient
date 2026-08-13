@@ -178,6 +178,7 @@ export default function WorkspacePage() {
                 {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && (
                   <ScheduleTab
                     project={project}
+                    floors={floors}
                     floorId={currentFloorId}
                     elementKey={elementKey}
                   />
