@@ -89,17 +89,21 @@ export function DuplicateFloorModal({
   }, [open, selectedMode, floors, projectId, sourceFloorId])
 
   const mut = useMutation({
-    mutationFn: () =>
-      runImmediate(() =>
-        duplicateFloor(projectId, {
+    mutationFn: async () => {
+      let result: Awaited<ReturnType<typeof duplicateFloor>> | undefined
+      await runImmediate(async () => {
+        result = await duplicateFloor(projectId, {
           ...(selectedMode
             ? { instanceIds }
             : { sourceFloorId: sourceFloorId! }),
           ...(targetMode === 'new'
             ? { newFloor: draft }
             : { targetFloorId: existingFloorId }),
-        }),
-      ),
+        })
+      })
+      if (!result) throw new Error('Duplication failed')
+      return result
+    },
     onSuccess: async (res) => {
       await qc.invalidateQueries({ queryKey: ['project', projectId] })
       await qc.invalidateQueries({ queryKey: ['instances', projectId] })
