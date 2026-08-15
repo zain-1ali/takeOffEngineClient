@@ -1,4 +1,9 @@
-import type { ConcreteMix, MortarMix, ProjectMaterials } from '../types/api'
+import type {
+  ConcreteMix,
+  FinishWetMix,
+  MortarMix,
+  ProjectMaterials,
+} from '../types/api'
 
 const SPEC: Record<string, ConcreteMix> = {
   'C15/20': { cement: 220, sand: 0.52, agg: 0.9, water: 185 },
@@ -15,6 +20,30 @@ const SPEC: Record<string, ConcreteMix> = {
 export const DEFAULT_MORTAR_MIX: MortarMix = {
   cementBagsPerM3: 7.2,
   sandM3PerM3: 1.0,
+}
+
+/** Indicative ~1:4 screed — verify before procurement. */
+export const DEFAULT_SCREED_MIX: FinishWetMix = {
+  cementKgPerM3: 360,
+  sandM3PerM3: 0.8,
+}
+
+/** Indicative ~1:4–1:5 plaster — verify before procurement. */
+export const DEFAULT_PLASTER_MIX: FinishWetMix = {
+  cementKgPerM3: 280,
+  sandM3PerM3: 1.0,
+}
+
+/** Pre-fix finish BOM used C20/25 — preserve until revision bump. */
+export const LEGACY_C20_FINISH_MIX: FinishWetMix = {
+  cementKgPerM3: 280,
+  sandM3PerM3: 0.48,
+}
+
+function hasFinishWetMix(
+  mix: FinishWetMix | undefined | null,
+): mix is FinishWetMix {
+  return mix != null && mix.cementKgPerM3 != null && mix.sandM3PerM3 != null
 }
 
 export function defaultMixForGrade(grade: string): ConcreteMix {
@@ -45,6 +74,30 @@ export function ensureClientMaterials(m: ProjectMaterials): ProjectMaterials {
       m.appliedMortarMix?.cementBagsPerM3 ?? mortarMix.cementBagsPerM3,
     sandM3PerM3: m.appliedMortarMix?.sandM3PerM3 ?? mortarMix.sandM3PerM3,
   }
+  const screedMix = hasFinishWetMix(m.screedMix)
+    ? {
+        cementKgPerM3: Number(m.screedMix.cementKgPerM3) || 0,
+        sandM3PerM3: Number(m.screedMix.sandM3PerM3) || 0,
+      }
+    : { ...DEFAULT_SCREED_MIX }
+  const appliedScreedMix = hasFinishWetMix(m.appliedScreedMix)
+    ? {
+        cementKgPerM3: Number(m.appliedScreedMix.cementKgPerM3) || 0,
+        sandM3PerM3: Number(m.appliedScreedMix.sandM3PerM3) || 0,
+      }
+    : { ...LEGACY_C20_FINISH_MIX }
+  const plasterMix = hasFinishWetMix(m.plasterMix)
+    ? {
+        cementKgPerM3: Number(m.plasterMix.cementKgPerM3) || 0,
+        sandM3PerM3: Number(m.plasterMix.sandM3PerM3) || 0,
+      }
+    : { ...DEFAULT_PLASTER_MIX }
+  const appliedPlasterMix = hasFinishWetMix(m.appliedPlasterMix)
+    ? {
+        cementKgPerM3: Number(m.appliedPlasterMix.cementKgPerM3) || 0,
+        sandM3PerM3: Number(m.appliedPlasterMix.sandM3PerM3) || 0,
+      }
+    : { ...LEGACY_C20_FINISH_MIX }
   const verticalBracingRate = m.verticalBracingRate ?? 5
   const soffitPropRate = m.soffitPropRate ?? 12
   return {
@@ -54,6 +107,10 @@ export function ensureClientMaterials(m: ProjectMaterials): ProjectMaterials {
     appliedConcreteMixes,
     mortarMix,
     appliedMortarMix,
+    screedMix,
+    appliedScreedMix,
+    plasterMix,
+    appliedPlasterMix,
     appliedStoneMortarRatio: m.appliedStoneMortarRatio ?? m.stoneMortarRatio,
     appliedStoneMortarFraction:
       m.appliedStoneMortarFraction ?? m.stoneMortarFraction,
@@ -83,6 +140,18 @@ export function mixesArePending(materials: ProjectMaterials): boolean {
   if (
     m.mortarMix.cementBagsPerM3 !== m.appliedMortarMix.cementBagsPerM3 ||
     m.mortarMix.sandM3PerM3 !== m.appliedMortarMix.sandM3PerM3
+  ) {
+    return true
+  }
+  if (
+    m.screedMix.cementKgPerM3 !== m.appliedScreedMix.cementKgPerM3 ||
+    m.screedMix.sandM3PerM3 !== m.appliedScreedMix.sandM3PerM3
+  ) {
+    return true
+  }
+  if (
+    m.plasterMix.cementKgPerM3 !== m.appliedPlasterMix.cementKgPerM3 ||
+    m.plasterMix.sandM3PerM3 !== m.appliedPlasterMix.sandM3PerM3
   ) {
     return true
   }

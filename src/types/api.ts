@@ -14,6 +14,12 @@ export type MortarMix = {
   sandM3PerM3: number
 }
 
+/** Screed / plaster: cement kg + sand m³ per m³ finished material. */
+export type FinishWetMix = {
+  cementKgPerM3: number
+  sandM3PerM3: number
+}
+
 export type ProjectMaterials = {
   concreteClasses: string[]
   defaultConcreteGrade: string
@@ -34,6 +40,10 @@ export type ProjectMaterials = {
   appliedConcreteMixes: Record<string, ConcreteMix>
   mortarMix: MortarMix
   appliedMortarMix: MortarMix
+  screedMix: FinishWetMix
+  appliedScreedMix: FinishWetMix
+  plasterMix: FinishWetMix
+  appliedPlasterMix: FinishWetMix
   appliedStoneMortarRatio: string
   appliedStoneMortarFraction: number
 }

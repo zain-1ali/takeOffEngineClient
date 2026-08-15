@@ -369,7 +369,7 @@ export function ProjectModal({
             <p className="text-[11px] text-signal mt-2 leading-relaxed">
               Draft mixes / formwork support rates differ from revision{' '}
               {form.revision}. Change the Revision field to apply them to BOM
-              going forward.
+              going forward (includes screed and plaster mixes).
             </p>
           )}
         </div>
@@ -427,6 +427,7 @@ export function ProjectModal({
           <p className="text-[11px] text-steel mt-1 mb-3">
             Ratio label (BOQ text), mortar fraction of masonry volume, and BOM
             cement/sand per m³ mortar. Same revision gate as concrete mixes.
+            Defaults are indicative — verify before procurement.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Mortar ratio label">
@@ -487,6 +488,100 @@ export function ProjectModal({
                     ...materials,
                     mortarMix: {
                       ...materials.mortarMix,
+                      sandM3PerM3: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Floor screed mix</h3>
+          <p className="text-[11px] text-steel mt-1 mb-3">
+            Per m³ screed — cement (kg) and sand (m³). Default ~1:4 by volume
+            (indicative, verify before procurement). Same revision gate as
+            concrete mixes.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Cement kg per m³ screed">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputClass}
+                value={materials.screedMix.cementKgPerM3}
+                onChange={(e) =>
+                  persistMaterials({
+                    ...materials,
+                    screedMix: {
+                      ...materials.screedMix,
+                      cementKgPerM3: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+              />
+            </Field>
+            <Field label="Sand m³ per m³ screed">
+              <input
+                type="number"
+                min={0}
+                step={0.05}
+                className={inputClass}
+                value={materials.screedMix.sandM3PerM3}
+                onChange={(e) =>
+                  persistMaterials({
+                    ...materials,
+                    screedMix: {
+                      ...materials.screedMix,
+                      sandM3PerM3: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Plaster mix</h3>
+          <p className="text-[11px] text-steel mt-1 mb-3">
+            Per m³ plaster — cement (kg) and sand (m³). Default ~1:4–1:5 by
+            volume (indicative, verify before procurement). Same revision gate
+            as concrete mixes.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Cement kg per m³ plaster">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className={inputClass}
+                value={materials.plasterMix.cementKgPerM3}
+                onChange={(e) =>
+                  persistMaterials({
+                    ...materials,
+                    plasterMix: {
+                      ...materials.plasterMix,
+                      cementKgPerM3: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+              />
+            </Field>
+            <Field label="Sand m³ per m³ plaster">
+              <input
+                type="number"
+                min={0}
+                step={0.05}
+                className={inputClass}
+                value={materials.plasterMix.sandM3PerM3}
+                onChange={(e) =>
+                  persistMaterials({
+                    ...materials,
+                    plasterMix: {
+                      ...materials.plasterMix,
                       sandM3PerM3: parseFloat(e.target.value) || 0,
                     },
                   })

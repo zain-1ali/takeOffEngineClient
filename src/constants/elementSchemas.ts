@@ -805,6 +805,8 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     specList: FINISH_SPECS.FLOOR,
     outputCols: [
       { key: 'area', label: 'Area (m²)', unit: 'm²', dec: 2, resultKey: 'totalAreaM2' },
+      { key: 'screed', label: 'Screed (m³)', unit: 'm³', dec: 2, resultKey: 'totalScreedM3' },
+      { key: 'tiles', label: 'Tiles (m²)', unit: 'm²', dec: 2, resultKey: 'totalTilesM2' },
     ],
   },
 
