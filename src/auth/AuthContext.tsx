@@ -7,7 +7,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { api, ApiError, type AuthUser } from '../lib/api'
+import {
+  api,
+  ApiError,
+  setAccessToken,
+  type AuthUser,
+} from '../lib/api'
 
 type AuthContextValue = {
   user: AuthUser | null
@@ -20,6 +25,8 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+type AuthResponse = { user: AuthUser; token: string }
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -28,12 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api<{ user: AuthUser }>('/api/auth/me')
       setUser(data.user)
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setUser(null)
-      } else {
-        setUser(null)
-      }
+    } catch {
+      setAccessToken(null)
+      setUser(null)
     }
   }, [])
 
@@ -45,7 +49,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await api<{ user: AuthUser }>('/api/auth/me')
         if (!cancelled) setUser(data.user)
       } catch {
-        if (!cancelled) setUser(null)
+        if (!cancelled) {
+          setAccessToken(null)
+          setUser(null)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -56,22 +63,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    await api<{ user: AuthUser }>('/api/auth/login', {
+    const data = await api<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
-    // Confirm the session cookie was accepted before treating as logged in.
-    const data = await api<{ user: AuthUser }>('/api/auth/me')
+    setAccessToken(data.token)
     setUser(data.user)
   }, [])
 
   const signup = useCallback(
     async (name: string, email: string, password: string) => {
-      await api<{ user: AuthUser }>('/api/auth/signup', {
+      const data = await api<AuthResponse>('/api/auth/signup', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
       })
-      const data = await api<{ user: AuthUser }>('/api/auth/me')
+      setAccessToken(data.token)
       setUser(data.user)
     },
     [],
@@ -80,7 +86,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await api('/api/auth/logout', { method: 'POST' })
+    } catch (err) {
+      if (!(err instanceof ApiError)) {
+        // ignore network errors on logout
+      }
     } finally {
+      setAccessToken(null)
       setUser(null)
     }
   }, [])

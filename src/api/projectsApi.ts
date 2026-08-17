@@ -1,4 +1,4 @@
-import { api, ApiError } from '../lib/api'
+import { api, ApiError, getAccessToken } from '../lib/api'
 import type {
   CalcResultRow,
   DashboardPayload,
@@ -179,9 +179,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 export async function startRatePdfImport(projectId: string, file: File) {
   const body = new FormData()
   body.append('file', file)
+  const headers = new Headers()
+  const token = getAccessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(
     `${API_BASE_URL}/api/projects/${projectId}/rate-lib/import-pdf`,
-    { method: 'POST', body, credentials: 'include' },
+    { method: 'POST', body, credentials: 'include', headers },
   )
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
@@ -287,9 +290,12 @@ export function deleteManualBoqItem(projectId: string, itemId: string) {
 export async function startIfcImport(projectId: string, file: File) {
   const body = new FormData()
   body.append('file', file)
+  const headers = new Headers()
+  const token = getAccessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(
     `${API_BASE_URL}/api/projects/${projectId}/ifc-import`,
-    { method: 'POST', body, credentials: 'include' },
+    { method: 'POST', body, credentials: 'include', headers },
   )
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
