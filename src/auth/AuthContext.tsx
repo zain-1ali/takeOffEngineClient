@@ -56,19 +56,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await api<{ user: AuthUser }>('/api/auth/login', {
+    await api<{ user: AuthUser }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
+    // Confirm the session cookie was accepted before treating as logged in.
+    const data = await api<{ user: AuthUser }>('/api/auth/me')
     setUser(data.user)
   }, [])
 
   const signup = useCallback(
     async (name: string, email: string, password: string) => {
-      const data = await api<{ user: AuthUser }>('/api/auth/signup', {
+      await api<{ user: AuthUser }>('/api/auth/signup', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
       })
+      const data = await api<{ user: AuthUser }>('/api/auth/me')
       setUser(data.user)
     },
     [],
