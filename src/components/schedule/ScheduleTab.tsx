@@ -26,6 +26,8 @@ import {
 } from '../../lib/units'
 import type { Floor, Instance, Project } from '../../types/api'
 import { DuplicateFloorModal } from '../modals/DuplicateFloorModal'
+import { OpeningsTableModal } from '../modals/OpeningsTableModal'
+import { StairSegmentsModal } from '../modals/StairSegmentsModal'
 import {
   GridPlacementModal,
   type PointPlacementResult,
@@ -33,6 +35,7 @@ import {
 } from '../modals/GridPlacementModal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
 import { IfcImportPanel } from './IfcImportPanel'
+import { parseOpenings } from '../../lib/openings'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
@@ -616,7 +619,13 @@ function InstanceRow({
   onDelete: () => void
 }) {
   const [local, setLocal] = useState(inst)
+  const [openingsOpen, setOpeningsOpen] = useState(false)
+  const [stairSegmentsOpen, setStairSegmentsOpen] = useState(false)
   useEffect(() => setLocal(inst), [inst])
+  const isStairs = local.elementKey === 'STAIRS'
+  const segmentCount = Array.isArray(local.geometry?.segments)
+    ? local.geometry.segments.length
+    : 0
 
   const shapeFields = schema.geometryByShape[local.shape] || []
   const shapeKeys = new Set(shapeFields.map((f) => f.key))
@@ -631,6 +640,47 @@ function InstanceRow({
       delete geometry[key]
     } else {
       geometry[key] = value
+    }
+    // Keep multi-segment model in sync when editing flat flight columns.
+    if (
+      isStairs &&
+      Array.isArray(geometry.segments) &&
+      geometry.segments.length > 0
+    ) {
+      const flightKeys = new Set([
+        'run',
+        'rise',
+        'width',
+        'stepCount',
+        'waistThickness',
+        'exposedSides',
+        'flight1Run',
+        'flight2Run',
+        'innerRadius',
+        'turnAngleDeg',
+      ])
+      if (flightKeys.has(key)) {
+        const segs = geometry.segments.map((s: unknown) =>
+          s && typeof s === 'object' ? { ...(s as object) } : s,
+        ) as Record<string, unknown>[]
+        const fi = segs.findIndex((s) => s?.kind === 'flight')
+        if (fi >= 0) {
+          if (value === '' || value == null) delete segs[fi][key]
+          else segs[fi][key] = value
+          geometry.segments = segs
+        }
+      }
+    }
+    setLocal((l) => ({ ...l, geometry }))
+    onPatch({ geometry })
+  }
+
+  /** Patch several geometry keys in one autosave write. */
+  function setGeoMany(patch: Record<string, unknown>) {
+    const geometry = { ...(local.geometry || {}) }
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === '' || value == null) delete geometry[key]
+      else geometry[key] = value
     }
     setLocal((l) => ({ ...l, geometry }))
     onPatch({ geometry })
@@ -684,6 +734,71 @@ function InstanceRow({
           <div className="mt-0.5 text-[10px] font-mono text-steel">
             {gridLabel(local.geometry)}
           </div>
+        )}
+        {isStairs && (
+          <div className="mt-1 flex flex-col items-start gap-0.5">
+            <button
+              type="button"
+              title="Edit flight / landing segments"
+              className="border border-steel-border px-1.5 py-0.5 text-[10px] text-steel hover:text-ink hover:border-steel"
+              onClick={() => setStairSegmentsOpen(true)}
+            >
+              Segments
+            </button>
+            {segmentCount > 0 && (
+              <span className="text-[9px] font-sans text-steel">
+                {segmentCount} segment{segmentCount === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+        )}
+        {isStairs && (
+          <StairSegmentsModal
+            open={stairSegmentsOpen}
+            onClose={() => setStairSegmentsOpen(false)}
+            segments={local.geometry?.segments}
+            legacy={{
+              run: Number(local.geometry?.run) || undefined,
+              rise: Number(local.geometry?.rise) || undefined,
+              width: Number(local.geometry?.width) || undefined,
+              stepCount: Number(local.geometry?.stepCount) || undefined,
+              waistThickness:
+                Number(local.geometry?.waistThickness) || undefined,
+              exposedSides:
+                local.geometry?.exposedSides != null
+                  ? Number(local.geometry.exposedSides)
+                  : undefined,
+            }}
+            onConfirm={(segments) => {
+              const firstFlight = segments.find(
+                (s) => s.kind === 'flight',
+              ) as
+                | {
+                    kind: 'flight'
+                    run?: number
+                    rise?: number
+                    width?: number
+                    stepCount?: number
+                    waistThickness?: number
+                    exposedSides?: number
+                  }
+                | undefined
+              const patch: Record<string, unknown> = { segments }
+              // Keep flat schedule columns in sync with the first flight.
+              if (firstFlight) {
+                if (firstFlight.run != null) patch.run = firstFlight.run
+                if (firstFlight.rise != null) patch.rise = firstFlight.rise
+                if (firstFlight.width != null) patch.width = firstFlight.width
+                if (firstFlight.stepCount != null)
+                  patch.stepCount = firstFlight.stepCount
+                if (firstFlight.waistThickness != null)
+                  patch.waistThickness = firstFlight.waistThickness
+                if (firstFlight.exposedSides != null)
+                  patch.exposedSides = firstFlight.exposedSides
+              }
+              setGeoMany(patch)
+            }}
+          />
         )}
       </DataTable.Cell>
       <DataTable.Cell className="w-14">
@@ -794,6 +909,7 @@ function InstanceRow({
         const lengthField = field && isMetricLengthLabel(field.label)
         const isOverrideField = col.key === 'areaOverride'
         const isWasteField = Boolean(field?.uiPercent)
+        const isOpeningsField = col.key === 'openingArea'
         const hasStored =
           raw != null && raw !== '' && !(typeof raw === 'number' && Number.isNaN(raw))
 
@@ -815,6 +931,10 @@ function InstanceRow({
           }
         }
 
+        const openingsCount = isOpeningsField
+          ? parseOpenings(local.geometry?.openings).length
+          : 0
+
         return (
           <DataTable.Cell
             key={col.key}
@@ -822,39 +942,70 @@ function InstanceRow({
           >
             {active && field ? (
               <div className="flex flex-col gap-0.5">
-                <ScheduleInput
-                  field={field}
-                  value={displayVal}
-                  onChange={(v) => {
-                    if (field.type === 'text') {
-                      setGeo(col.key, String(v ?? '').trim() ? String(v) : '')
-                      return
-                    }
-                    if (v === '' || v == null) {
-                      setGeo(col.key, '')
-                      return
-                    }
-                    const num = typeof v === 'number' ? v : Number(v)
-                    if (Number.isNaN(num)) {
-                      setGeo(col.key, '')
-                      return
-                    }
-                    if (isWasteField) {
-                      setGeo(col.key, Math.max(0, num) / 100)
-                      return
-                    }
-                    setGeo(
-                      col.key,
-                      lengthField
-                        ? Number(
-                            lengthFromDisplay(num || 0, unitSystem).toFixed(
-                              field.dec ?? 2,
-                            ),
-                          )
-                        : num,
-                    )
-                  }}
-                />
+                <div className="flex items-center gap-1">
+                  <div className="min-w-0 flex-1">
+                    <ScheduleInput
+                      field={field}
+                      value={displayVal}
+                      onChange={(v) => {
+                        if (field.type === 'text') {
+                          setGeo(col.key, String(v ?? '').trim() ? String(v) : '')
+                          return
+                        }
+                        if (v === '' || v == null) {
+                          if (isOpeningsField) {
+                            setGeoMany({ openingArea: '', openings: [] })
+                          } else {
+                            setGeo(col.key, '')
+                          }
+                          return
+                        }
+                        const num = typeof v === 'number' ? v : Number(v)
+                        if (Number.isNaN(num)) {
+                          setGeo(col.key, '')
+                          return
+                        }
+                        if (isWasteField) {
+                          setGeo(col.key, Math.max(0, num) / 100)
+                          return
+                        }
+                        if (isOpeningsField) {
+                          // Manual total clears saved breakdown (stale rows would lie).
+                          setGeoMany({
+                            openingArea: num,
+                            openings: [],
+                          })
+                          return
+                        }
+                        setGeo(
+                          col.key,
+                          lengthField
+                            ? Number(
+                                lengthFromDisplay(num || 0, unitSystem).toFixed(
+                                  field.dec ?? 2,
+                                ),
+                              )
+                            : num,
+                        )
+                      }}
+                    />
+                  </div>
+                  {isOpeningsField && (
+                    <button
+                      type="button"
+                      title="Edit openings breakdown"
+                      className="shrink-0 border border-steel-border px-1.5 py-1 text-[10px] text-steel hover:text-ink hover:border-steel"
+                      onClick={() => setOpeningsOpen(true)}
+                    >
+                      ▦
+                    </button>
+                  )}
+                </div>
+                {isOpeningsField && openingsCount > 0 && (
+                  <span className="text-[9px] font-sans text-steel">
+                    {openingsCount} opening{openingsCount === 1 ? '' : 's'}
+                  </span>
+                )}
                 {isOverrideField && usingAreaOverride && (
                   <span className="text-[9px] font-sans uppercase tracking-wide text-signal">
                     Using override
@@ -873,6 +1024,23 @@ function InstanceRow({
               </div>
             ) : (
               <span className="text-steel/50">—</span>
+            )}
+            {isOpeningsField && (
+              <OpeningsTableModal
+                open={openingsOpen}
+                onClose={() => setOpeningsOpen(false)}
+                title="Openings"
+                unitSystem={unitSystem}
+                openings={local.geometry?.openings}
+                openingArea={
+                  typeof local.geometry?.openingArea === 'number'
+                    ? local.geometry.openingArea
+                    : Number(local.geometry?.openingArea) || 0
+                }
+                onConfirm={({ openings, openingArea }) => {
+                  setGeoMany({ openings, openingArea })
+                }}
+              />
             )}
           </DataTable.Cell>
         )
@@ -903,6 +1071,14 @@ function InstanceRow({
           >
             <div className="flex flex-col items-end gap-0.5">
               <span>{formatQty(shown, c.dec)}</span>
+              {(c.key === 'riserLm' || c.key === 'sideLm') && (
+                <span
+                  className="text-[9px] font-sans uppercase tracking-wide text-signal"
+                  title="Assumption 2 — indicative; verify before procurement"
+                >
+                  Indicative
+                </span>
+              )}
               {showOverrideBadge && (
                 <span
                   className="text-[9px] font-sans uppercase tracking-wide text-signal"

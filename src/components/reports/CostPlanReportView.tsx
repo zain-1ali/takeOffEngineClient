@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { formatMoney } from '../../lib/units'
 import type { CostPlanLine, CostPlanPayload, CostPlanSummaryLine } from '../../types/costPlan'
 import { DataTable } from '../ui'
@@ -21,6 +22,94 @@ function fmtRate(v: number | undefined | null, currency: string): string {
   return formatMoney(v, currency)
 }
 
+type AccordionRow = {
+  key: string
+  line: CostPlanLine
+  expanded?: boolean
+  toggleKind?: 'element' | 'category'
+  sectionKey?: string
+}
+
+function buildAccordionRows(
+  lines: CostPlanLine[],
+  collapsedElements: Set<string>,
+  collapsedCategories: Set<string>,
+): AccordionRow[] {
+  const rows: AccordionRow[] = []
+  let elementKey: string | null = null
+  let elementCollapsed = false
+  let categoryCollapsed = false
+  let i = 0
+
+  for (const line of lines) {
+    const level = line.outlineLevel
+    const isElementHeader =
+      line.kind === 'group' && !line.workCategory && (level === 0 || level == null)
+    const isCategoryHeader = line.kind === 'group' && Boolean(line.workCategory)
+    const isElementTotal =
+      line.kind === 'total' &&
+      !/COST PLAN TOTAL/i.test(line.description || '') &&
+      (level === 0 || level == null)
+    const isGrand = line.kind === 'total' && /COST PLAN TOTAL/i.test(line.description || '')
+
+    if (isElementHeader) {
+      elementKey = `el-${i}-${line.description}`
+      elementCollapsed = collapsedElements.has(elementKey)
+      categoryCollapsed = false
+      rows.push({
+        key: `r-${i}`,
+        line,
+        expanded: !elementCollapsed,
+        toggleKind: 'element',
+        sectionKey: elementKey,
+      })
+      i++
+      continue
+    }
+
+    if (isCategoryHeader) {
+      if (elementCollapsed) {
+        i++
+        continue
+      }
+      const categoryKey = `${elementKey || 'root'}::cat-${line.workCategory}-${i}`
+      categoryCollapsed = collapsedCategories.has(categoryKey)
+      rows.push({
+        key: `r-${i}`,
+        line,
+        expanded: !categoryCollapsed,
+        toggleKind: 'category',
+        sectionKey: categoryKey,
+      })
+      i++
+      continue
+    }
+
+    if (line.kind === 'item') {
+      if (elementCollapsed || categoryCollapsed) {
+        i++
+        continue
+      }
+      rows.push({ key: `r-${i}`, line })
+      i++
+      continue
+    }
+
+    if (isElementTotal || isGrand) {
+      elementCollapsed = false
+      categoryCollapsed = false
+      rows.push({ key: `r-${i}`, line })
+      i++
+      continue
+    }
+
+    rows.push({ key: `r-${i}`, line })
+    i++
+  }
+
+  return rows
+}
+
 export function CostPlanReportView({
   data,
 }: {
@@ -29,6 +118,37 @@ export function CostPlanReportView({
   const showRateM2 = data.gfaM2 != null && data.gfaM2 > 0
   const currency = data.currency
   const colCount = showRateM2 ? 7 : 6
+
+  const [collapsedElements, setCollapsedElements] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(),
+  )
+
+  const accordionRows = useMemo(
+    () =>
+      buildAccordionRows(data.lines, collapsedElements, collapsedCategories),
+    [data.lines, collapsedElements, collapsedCategories],
+  )
+
+  function toggleElement(key: string) {
+    setCollapsedElements((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleCategory(key: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -63,19 +183,37 @@ export function CostPlanReportView({
                 </DataTable.Cell>
               </DataTable.Row>
             )}
-            {data.lines.map((line, i) => {
+            {accordionRows.map((row) => {
+              const line = row.line
               if (line.kind === 'group') {
                 const isWorkCat = Boolean(line.workCategory)
+                const chevron =
+                  row.toggleKind != null ? (row.expanded ? '▾' : '▸') : null
+                const onToggle =
+                  row.toggleKind === 'element'
+                    ? () => toggleElement(row.sectionKey!)
+                    : row.toggleKind === 'category'
+                      ? () => toggleCategory(row.sectionKey!)
+                      : undefined
                 return (
-                  <DataTable.Row key={i} className="!border-0 hover:!bg-transparent">
+                  <DataTable.Row
+                    key={row.key}
+                    className="!border-0 hover:!bg-transparent"
+                  >
                     <DataTable.Cell
                       colSpan={colCount}
                       className={
                         isWorkCat
-                          ? '!py-1.5 pl-4 font-semibold text-ink text-[12px] border-l-2 border-signal'
-                          : '!py-2 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[11px]'
+                          ? '!py-1.5 pl-4 font-semibold text-ink text-[12px] border-l-2 border-signal cursor-pointer'
+                          : '!py-2 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[11px] cursor-pointer'
                       }
+                      onClick={onToggle}
                     >
+                      {chevron != null && (
+                        <span className="inline-block w-4 mr-1 opacity-70" aria-hidden>
+                          {chevron}
+                        </span>
+                      )}
                       {line.description}
                     </DataTable.Cell>
                   </DataTable.Row>
@@ -83,7 +221,7 @@ export function CostPlanReportView({
               }
               if (line.kind === 'total') {
                 return (
-                  <DataTable.Row key={i} totals>
+                  <DataTable.Row key={row.key} totals>
                     <DataTable.Cell colSpan={5}>{line.description}</DataTable.Cell>
                     <DataTable.Cell numeric className="text-ink font-bold">
                       {formatMoney(line.amount, currency)}
@@ -97,7 +235,7 @@ export function CostPlanReportView({
                 )
               }
               return (
-                <DataTable.Row key={i}>
+                <DataTable.Row key={row.key}>
                   <DataTable.Cell className="font-mono text-steel">{line.ref}</DataTable.Cell>
                   <DataTable.Cell>
                     <span className="inline-flex items-center gap-1.5 flex-wrap">

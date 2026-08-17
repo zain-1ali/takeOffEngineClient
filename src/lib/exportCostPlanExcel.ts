@@ -101,6 +101,13 @@ export async function exportCostPlanExcel(
 
   const ws = wb.addWorksheet('Cost Plan', {
     views: [{ state: 'frozen', ySplit: 5 }],
+    properties: {
+      outlineLevelRow: 2,
+      outlineProperties: {
+        summaryBelow: false,
+        summaryRight: true,
+      },
+    },
   })
 
   ws.columns = [
@@ -193,26 +200,31 @@ export async function exportCostPlanExcel(
           left: { style: 'medium', color: { argb: hexToArgb(c.tertiary) } },
         }
       }
+      // Native Excel outline: element=0, category=1, items=2
+      row.outlineLevel = line.outlineLevel ?? (isWorkCat ? 1 : 0)
       alt = false
       continue
     }
 
     if (line.kind === 'total') {
       const desc = line.description || ''
-      const isCodeSub = desc.includes('· Sub-total')
+      const isCodeSub = / total$/i.test(desc) && !/COST PLAN TOTAL/i.test(desc)
       const isGrand = desc.includes('COST PLAN TOTAL')
-      const isGroupTot = !isCodeSub && !isGrand
+      const isGroupTot = false
 
       const row = ws.addRow(['', desc, '', '', '', null, ...(showRateM2 ? [null] : [])])
       const r = row.number
       const amtCell = row.getCell(AMT)
+      row.outlineLevel = line.outlineLevel ?? 0
 
       if (isCodeSub) {
+        // Element section total — sum items since last element header
         amtCell.value = sumFormula(codeItemRows, AMT, line.amount)
         groupSubtotalRows.push(r)
+        groupTotalRows.push(r)
+        summaryTotalRefs.push({ label: desc, row: r })
         codeItemRows = []
       } else if (isGrand) {
-        // Prefer summing group totals when present; else all item amounts
         const src = groupTotalRows.length ? groupTotalRows : allItemRows
         amtCell.value = sumFormula(src, AMT, line.amount)
         grandTotalRow = r
@@ -284,6 +296,7 @@ export async function exportCostPlanExcel(
 
     codeItemRows.push(r)
     allItemRows.push(r)
+    row.outlineLevel = line.outlineLevel ?? 2
 
     row.eachCell((cell, col) => {
       cell.font = { size: 10, name: 'Calibri' }
@@ -700,7 +713,7 @@ export async function exportCostPlanExcel(
     })
   }
 
-  const elHeader = sumWs.addRow(['Elemental / UniFormat totals'])
+  const elHeader = sumWs.addRow(['Elemental / element-type totals'])
   elHeader.getCell(1).font = fontDark(c, true, 10)
   elHeader.getCell(1).fill = fillSolid(hexToArgb(c.tint))
   for (const ref of summaryTotalRefs) {

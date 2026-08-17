@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { formatMoney } from '../../lib/units'
 import {
   THEME_HEADER_TEXT,
@@ -26,7 +27,9 @@ function money(n: number | null | undefined, currency: string): string {
   return formatMoney(n, currency)
 }
 
-/** Live bill-style preview matching themed PDF colors. */
+type SectionKey = string
+
+/** Live bill-style preview with element → category accordion. */
 export function CostPlanThemedPreview({
   data,
   themeId,
@@ -41,9 +44,39 @@ export function CostPlanThemedPreview({
   const currency = data.currency
   const colCount = showRateM2 ? 7 : 6
   const c = theme.colors
-  /** Preview paper is always light — never inherit app dark-mode --ink (near-white). */
   const bodyText = c.secondary
   const mutedText = c.tertiary
+
+  const [collapsedElements, setCollapsedElements] = useState<Set<SectionKey>>(
+    () => new Set(),
+  )
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<SectionKey>>(
+    () => new Set(),
+  )
+
+  const accordionRows = useMemo(
+    () =>
+      buildAccordionRows(data.lines, collapsedElements, collapsedCategories),
+    [data.lines, collapsedElements, collapsedCategories],
+  )
+
+  function toggleElement(key: SectionKey) {
+    setCollapsedElements((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleCategory(key: SectionKey) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <div
@@ -56,7 +89,7 @@ export function CostPlanThemedPreview({
       >
         <p className="text-[11px] uppercase tracking-wider opacity-90">Cost Plan</p>
         <p className="text-base font-semibold mt-0.5">
-          {projectName || 'Project'} · UniFormat II
+          {projectName || 'Project'} · by element type
         </p>
         <p className="text-[11px] opacity-90 mt-1">
           Theme: {theme.name}
@@ -105,17 +138,25 @@ export function CostPlanThemedPreview({
                 </td>
               </tr>
             )}
-            {data.lines.map((line, i) => (
+            {accordionRows.map((row) => (
               <PreviewLine
-                key={i}
-                line={line}
+                key={row.key}
+                line={row.line}
                 theme={theme}
                 currency={currency}
                 showRateM2={showRateM2}
                 colCount={colCount}
-                alt={i % 2 === 1}
+                alt={row.alt}
                 bodyText={bodyText}
                 mutedText={mutedText}
+                expanded={row.expanded}
+                onToggle={
+                  row.toggleKind === 'element'
+                    ? () => toggleElement(row.sectionKey!)
+                    : row.toggleKind === 'category'
+                      ? () => toggleCategory(row.sectionKey!)
+                      : undefined
+                }
               />
             ))}
           </tbody>
@@ -134,6 +175,109 @@ export function CostPlanThemedPreview({
   )
 }
 
+type AccordionRow = {
+  key: string
+  line: CostPlanLine
+  alt: boolean
+  expanded?: boolean
+  toggleKind?: 'element' | 'category'
+  sectionKey?: string
+}
+
+function buildAccordionRows(
+  lines: CostPlanLine[],
+  collapsedElements: Set<string>,
+  collapsedCategories: Set<string>,
+): AccordionRow[] {
+  const rows: AccordionRow[] = []
+  let elementKey: string | null = null
+  let elementCollapsed = false
+  let categoryKey: string | null = null
+  let categoryCollapsed = false
+  let alt = false
+  let i = 0
+
+  for (const line of lines) {
+    const level = line.outlineLevel
+    const isElementHeader =
+      line.kind === 'group' && !line.workCategory && (level === 0 || level == null)
+    const isCategoryHeader = line.kind === 'group' && Boolean(line.workCategory)
+    const isElementTotal =
+      line.kind === 'total' &&
+      !/COST PLAN TOTAL/i.test(line.description || '') &&
+      (level === 0 || level == null)
+
+    if (isElementHeader) {
+      elementKey = `el-${i}-${line.description}`
+      elementCollapsed = collapsedElements.has(elementKey)
+      categoryKey = null
+      categoryCollapsed = false
+      rows.push({
+        key: `r-${i}`,
+        line,
+        alt: false,
+        expanded: !elementCollapsed,
+        toggleKind: 'element',
+        sectionKey: elementKey,
+      })
+      alt = false
+      i++
+      continue
+    }
+
+    if (elementCollapsed && !isElementTotal && line.kind !== 'total') {
+      // Hide category headers + items while element collapsed; still show element total if present later
+      if (!(line.kind === 'total' && /COST PLAN TOTAL/i.test(line.description || ''))) {
+        i++
+        continue
+      }
+    }
+
+    if (isCategoryHeader) {
+      if (elementCollapsed) {
+        i++
+        continue
+      }
+      categoryKey = `${elementKey || 'root'}::cat-${line.workCategory}-${i}`
+      categoryCollapsed = collapsedCategories.has(categoryKey)
+      rows.push({
+        key: `r-${i}`,
+        line,
+        alt: false,
+        expanded: !categoryCollapsed,
+        toggleKind: 'category',
+        sectionKey: categoryKey,
+      })
+      alt = false
+      i++
+      continue
+    }
+
+    if (line.kind === 'item') {
+      if (elementCollapsed || categoryCollapsed) {
+        i++
+        continue
+      }
+      rows.push({ key: `r-${i}`, line, alt })
+      alt = !alt
+      i++
+      continue
+    }
+
+    // totals (element or grand)
+    if (isElementTotal) {
+      elementCollapsed = false
+      categoryCollapsed = false
+      categoryKey = null
+    }
+    rows.push({ key: `r-${i}`, line, alt: false })
+    alt = false
+    i++
+  }
+
+  return rows
+}
+
 function PreviewLine({
   line,
   theme,
@@ -143,6 +287,8 @@ function PreviewLine({
   alt,
   bodyText,
   mutedText,
+  expanded,
+  onToggle,
 }: {
   line: CostPlanLine
   theme: ReportTheme
@@ -152,17 +298,35 @@ function PreviewLine({
   alt: boolean
   bodyText: string
   mutedText: string
+  expanded?: boolean
+  onToggle?: () => void
 }) {
   const c = theme.colors
   const border = '1px solid #e2e8f0'
 
   if (line.kind === 'group') {
     const isWorkCat = Boolean(line.workCategory)
+    const chevron = onToggle != null ? (expanded ? '▾' : '▸') : null
     return (
       <tr
         style={{
           backgroundColor: isWorkCat ? c.paper : c.tint,
+          cursor: onToggle ? 'pointer' : undefined,
         }}
+        onClick={onToggle}
+        onKeyDown={
+          onToggle
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onToggle()
+                }
+              }
+            : undefined
+        }
+        tabIndex={onToggle ? 0 : undefined}
+        role={onToggle ? 'button' : undefined}
+        aria-expanded={onToggle ? expanded : undefined}
       >
         <td
           colSpan={colCount}
@@ -178,6 +342,11 @@ function PreviewLine({
             paddingLeft: isWorkCat ? 14 : undefined,
           }}
         >
+          {chevron != null && (
+            <span className="inline-block w-4 mr-1 opacity-70" aria-hidden>
+              {chevron}
+            </span>
+          )}
           {line.description}
         </td>
       </tr>
@@ -293,88 +462,69 @@ function CascadePreview({
   const cols = showRateM2 ? 4 : 3
 
   return (
-    <div className="mt-0 border-t" style={{ borderColor: c.primary, color: bodyText }}>
+    <div className="border-t" style={{ borderColor: '#e2e8f0' }}>
       <div
-        className="px-4 py-2 font-semibold text-white text-[12px]"
+        className="px-4 py-2 text-white text-[11px] font-semibold uppercase tracking-wide"
         style={{ backgroundColor: c.primary }}
       >
         Design Allowance / Overhead &amp; Profit / Inflation
       </div>
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse text-[12px]">
         <thead>
           <tr style={{ backgroundColor: c.secondary, color: THEME_HEADER_TEXT }}>
-            <th className="text-left font-semibold px-2.5 py-2">Description</th>
-            <th className="text-right font-semibold px-2.5 py-2">Amount</th>
+            <th className="text-left font-semibold px-2.5 py-1.5">Description</th>
+            <th className="text-right font-semibold px-2.5 py-1.5">Amount</th>
             {showRateM2 && (
-              <th className="text-right font-semibold px-2.5 py-2">Rate/m²</th>
+              <th className="text-right font-semibold px-2.5 py-1.5">Rate/m²</th>
             )}
-            <th className="text-right font-semibold px-2.5 py-2">% of Elemental</th>
+            <th className="text-right font-semibold px-2.5 py-1.5">% of Elemental</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line, i) => {
-            const isStage = line.kind === 'stage' || line.kind === 'total'
-            const bg =
-              line.kind === 'total'
-                ? c.tint
-                : i % 2 === 1
-                  ? c.tint
-                  : c.paper
-            const textColor = bodyText
+            const emphasize = line.kind === 'stage' || line.kind === 'total'
             return (
-              <tr key={i} style={{ backgroundColor: bg, color: textColor }}>
+              <tr
+                key={i}
+                style={{
+                  backgroundColor: emphasize ? c.tint : c.paper,
+                  color: bodyText,
+                }}
+              >
                 <td
-                  className={`px-2.5 py-1.5 ${isStage ? 'font-semibold' : ''}`}
-                  style={{
-                    borderBottom: border,
-                    color: textColor,
-                    borderTop:
-                      line.kind === 'total' ? `2px solid ${c.tertiary}` : undefined,
-                  }}
+                  className={`px-2.5 py-1.5 ${emphasize ? 'font-semibold' : ''}`}
+                  style={{ borderBottom: border }}
                 >
                   {line.description}
                 </td>
                 <td
-                  className={`px-2.5 py-1.5 text-right tabular-nums ${isStage ? 'font-semibold' : ''}`}
-                  style={{
-                    borderBottom: border,
-                    color: textColor,
-                    borderTop:
-                      line.kind === 'total' ? `2px solid ${c.tertiary}` : undefined,
-                  }}
+                  className={`px-2.5 py-1.5 text-right tabular-nums ${emphasize ? 'font-semibold' : ''}`}
+                  style={{ borderBottom: border }}
                 >
                   {money(line.amount, currency)}
                 </td>
                 {showRateM2 && (
                   <td
-                    className={`px-2.5 py-1.5 text-right tabular-nums ${isStage ? 'font-semibold' : ''}`}
-                    style={{
-                      borderBottom: border,
-                      color: textColor,
-                      borderTop:
-                        line.kind === 'total' ? `2px solid ${c.tertiary}` : undefined,
-                    }}
+                    className="px-2.5 py-1.5 text-right tabular-nums"
+                    style={{ borderBottom: border }}
                   >
                     {money(line.ratePerM2, currency)}
                   </td>
                 )}
                 <td
-                  className={`px-2.5 py-1.5 text-right tabular-nums ${isStage ? 'font-semibold' : ''}`}
-                  style={{
-                    borderBottom: border,
-                    color: textColor,
-                    borderTop:
-                      line.kind === 'total' ? `2px solid ${c.tertiary}` : undefined,
-                  }}
+                  className="px-2.5 py-1.5 text-right tabular-nums"
+                  style={{ borderBottom: border, color: mutedText }}
                 >
-                  {fmtPct(line.percentOfElemental)}
+                  {line.percentOfElemental != null
+                    ? fmtPct(line.percentOfElemental)
+                    : ''}
                 </td>
               </tr>
             )
           })}
-          {!lines.length && (
+          {lines.length === 0 && (
             <tr>
-              <td colSpan={cols} className="px-2.5 py-4" style={{ color: mutedText }}>
+              <td colSpan={cols} className="px-2.5 py-4 text-center" style={{ color: mutedText }}>
                 No cascade summary.
               </td>
             </tr>
