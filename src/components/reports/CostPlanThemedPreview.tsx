@@ -226,11 +226,9 @@ function buildAccordionRows(
     }
 
     if (elementCollapsed && !isElementTotal && line.kind !== 'total') {
-      // Hide category headers + items while element collapsed; still show element total if present later
-      if (!(line.kind === 'total' && /COST PLAN TOTAL/i.test(line.description || ''))) {
-        i++
-        continue
-      }
+      // Hide category headers + items while element collapsed; totals fall through above
+      i++
+      continue
     }
 
     if (isCategoryHeader) {
