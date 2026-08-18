@@ -134,6 +134,8 @@ export async function exportCostPlanExcel(
   meta.value = [
     `Project ${project.number}`,
     project.client ? `Client: ${project.client}` : null,
+    project.contractor ? `Contractor: ${project.contractor}` : null,
+    project.consultant ? `Consultant: ${project.consultant}` : null,
     `Currency ${cur}`,
     `Rev ${project.revision}`,
     project.date,

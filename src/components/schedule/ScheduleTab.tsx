@@ -87,6 +87,12 @@ function finishBoqRateCode(elementKey: string): string | null {
   if (elementKey === 'FLOOR_FINISH') return 'floorFinish'
   if (elementKey === 'WALL_FINISH') return 'wallFinish'
   if (elementKey === 'CEILING_FINISH') return 'ceilingFinish'
+  if (elementKey === 'SKIRTING') return 'skirting'
+  if (elementKey === 'DOORS_WINDOWS') return 'doorsWindows'
+  if (elementKey === 'DUCTS') return 'ducts'
+  if (elementKey === 'DUCT_FITTINGS') return 'ductFittings'
+  if (elementKey === 'PIPES') return 'pipes'
+  if (elementKey === 'ELECTRICAL') return 'electrical'
   return null
 }
 
@@ -915,8 +921,8 @@ function InstanceRow({
 
         let displayVal: string | number = ''
         if (active && field) {
-          if (field.type === 'text') {
-            displayVal = hasStored ? String(raw) : ''
+          if (field.type === 'text' || field.type === 'select') {
+            displayVal = hasStored ? String(raw) : String(field.def ?? '')
           } else if (isWasteField) {
             const frac = hasStored ? Number(raw) : defaultTileWastage
             displayVal = Math.round(frac * 100)
@@ -948,8 +954,9 @@ function InstanceRow({
                       field={field}
                       value={displayVal}
                       onChange={(v) => {
-                        if (field.type === 'text') {
-                          setGeo(col.key, String(v ?? '').trim() ? String(v) : '')
+                        if (field.type === 'text' || field.type === 'select') {
+                          const s = String(v ?? '').trim()
+                          setGeo(col.key, s ? s : '')
                           return
                         }
                         if (v === '' || v == null) {

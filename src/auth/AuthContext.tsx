@@ -18,7 +18,16 @@ type AuthContextValue = {
   user: AuthUser | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
-  signup: (name: string, email: string, password: string) => Promise<void>
+  signup: (name: string, email: string, password: string) => Promise<{
+    needsVerification: true
+    email: string
+    message: string
+  }>
+  loginWithGoogle: (credential: string) => Promise<void>
+  verifyEmail: (token: string) => Promise<void>
+  resetPassword: (token: string, password: string) => Promise<void>
+  forgotPassword: (email: string) => Promise<string>
+  resendVerification: (email: string) => Promise<string>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -62,26 +71,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const applySession = useCallback((data: AuthResponse) => {
+    setAccessToken(data.token)
+    setUser(data.user)
+  }, [])
+
   const login = useCallback(async (email: string, password: string) => {
     const data = await api<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
-    setAccessToken(data.token)
-    setUser(data.user)
-  }, [])
+    applySession(data)
+  }, [applySession])
 
   const signup = useCallback(
     async (name: string, email: string, password: string) => {
-      const data = await api<AuthResponse>('/api/auth/signup', {
+      return api<{
+        needsVerification: true
+        email: string
+        message: string
+      }>('/api/auth/signup', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
       })
-      setAccessToken(data.token)
-      setUser(data.user)
     },
     [],
   )
+
+  const loginWithGoogle = useCallback(
+    async (credential: string) => {
+      const data = await api<AuthResponse>('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential }),
+      })
+      applySession(data)
+    },
+    [applySession],
+  )
+
+  const verifyEmail = useCallback(
+    async (token: string) => {
+      const data = await api<AuthResponse>('/api/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      })
+      applySession(data)
+    },
+    [applySession],
+  )
+
+  const resetPassword = useCallback(
+    async (token: string, password: string) => {
+      const data = await api<AuthResponse>('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+      })
+      applySession(data)
+    },
+    [applySession],
+  )
+
+  const forgotPassword = useCallback(async (email: string) => {
+    const data = await api<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+    return data.message
+  }, [])
+
+  const resendVerification = useCallback(async (email: string) => {
+    const data = await api<{ message: string }>('/api/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+    return data.message
+  }, [])
 
   const logout = useCallback(async () => {
     try {
@@ -97,8 +161,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, login, signup, logout, refresh }),
-    [user, loading, login, signup, logout, refresh],
+    () => ({
+      user,
+      loading,
+      login,
+      signup,
+      loginWithGoogle,
+      verifyEmail,
+      resetPassword,
+      forgotPassword,
+      resendVerification,
+      logout,
+      refresh,
+    }),
+    [
+      user,
+      loading,
+      login,
+      signup,
+      loginWithGoogle,
+      verifyEmail,
+      resetPassword,
+      forgotPassword,
+      resendVerification,
+      logout,
+      refresh,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

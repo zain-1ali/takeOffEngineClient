@@ -60,6 +60,9 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newClient, setNewClient] = useState('')
+  const [newContractor, setNewContractor] = useState('')
+  const [newConsultant, setNewConsultant] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
 
   const dashQuery = useQuery({
@@ -68,12 +71,26 @@ export default function DashboardPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (name: string) => createProject(name.trim() || 'Untitled Project'),
+    mutationFn: (input: {
+      name: string
+      client: string
+      contractor: string
+      consultant: string
+    }) =>
+      createProject({
+        name: input.name.trim(),
+        client: input.client.trim() || undefined,
+        contractor: input.contractor.trim() || undefined,
+        consultant: input.consultant.trim() || undefined,
+      }),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       void qc.invalidateQueries({ queryKey: ['projects'] })
       setCreating(false)
       setNewName('')
+      setNewClient('')
+      setNewContractor('')
+      setNewConsultant('')
       navigate(`/projects/${data.project.id}`)
     },
   })
@@ -96,7 +113,9 @@ export default function DashboardPage() {
         p.name.toLowerCase().includes(q) ||
         p.location.toLowerCase().includes(q) ||
         p.number.toLowerCase().includes(q) ||
-        p.client.toLowerCase().includes(q),
+        p.client.toLowerCase().includes(q) ||
+        (p.contractor || '').toLowerCase().includes(q) ||
+        (p.consultant || '').toLowerCase().includes(q),
     )
   }, [projects, search])
 
@@ -108,11 +127,29 @@ export default function DashboardPage() {
   function startCreate() {
     setCreating(true)
     setNewName('')
+    setNewClient('')
+    setNewContractor('')
+    setNewConsultant('')
   }
 
   function onCreate(e: FormEvent) {
     e.preventDefault()
-    createMut.mutate(newName)
+    const name = newName.trim()
+    if (!name) return
+    createMut.mutate({
+      name,
+      client: newClient,
+      contractor: newContractor,
+      consultant: newConsultant,
+    })
+  }
+
+  function cancelCreate() {
+    setCreating(false)
+    setNewName('')
+    setNewClient('')
+    setNewContractor('')
+    setNewConsultant('')
   }
 
   const summaryLine = (() => {
@@ -184,8 +221,14 @@ export default function DashboardPage() {
             creating={creating}
             newName={newName}
             setNewName={setNewName}
+            newClient={newClient}
+            setNewClient={setNewClient}
+            newContractor={newContractor}
+            setNewContractor={setNewContractor}
+            newConsultant={newConsultant}
+            setNewConsultant={setNewConsultant}
             onStart={startCreate}
-            onCancel={() => setCreating(false)}
+            onCancel={cancelCreate}
             onSubmit={onCreate}
             pending={createMut.isPending}
           />
@@ -206,24 +249,59 @@ export default function DashboardPage() {
             {creating && (
               <form
                 onSubmit={onCreate}
-                className="mb-6 flex flex-wrap gap-2 items-end border border-steel-border bg-panel p-4"
+                className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3 border border-steel-border bg-panel p-4"
               >
-                <label className="flex-1 min-w-[12rem] text-sm">
-                  <span className="text-steel text-xs">Project name</span>
+                <label className="sm:col-span-2 text-sm">
+                  <span className="text-steel text-xs">
+                    Project name <span className="text-signal">*</span>
+                  </span>
                   <input
                     autoFocus
+                    required
                     className="mt-1 w-full border border-steel-border bg-bg px-3 py-2 text-sm text-ink outline-none font-sans"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="Tower A — Substructure"
                   />
                 </label>
-                <PrimaryButton type="submit" disabled={createMut.isPending}>
-                  {createMut.isPending ? 'Creating…' : 'Create'}
-                </PrimaryButton>
-                <GhostButton type="button" onClick={() => setCreating(false)}>
-                  Cancel
-                </GhostButton>
+                <label className="text-sm">
+                  <span className="text-steel text-xs">Client</span>
+                  <input
+                    className="mt-1 w-full border border-steel-border bg-bg px-3 py-2 text-sm text-ink outline-none font-sans"
+                    value={newClient}
+                    onChange={(e) => setNewClient(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="text-steel text-xs">Contractor</span>
+                  <input
+                    className="mt-1 w-full border border-steel-border bg-bg px-3 py-2 text-sm text-ink outline-none font-sans"
+                    value={newContractor}
+                    onChange={(e) => setNewContractor(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label className="sm:col-span-2 text-sm">
+                  <span className="text-steel text-xs">Consultant</span>
+                  <input
+                    className="mt-1 w-full border border-steel-border bg-bg px-3 py-2 text-sm text-ink outline-none font-sans"
+                    value={newConsultant}
+                    onChange={(e) => setNewConsultant(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <div className="sm:col-span-2 flex gap-2">
+                  <PrimaryButton
+                    type="submit"
+                    disabled={createMut.isPending || !newName.trim()}
+                  >
+                    {createMut.isPending ? 'Creating…' : 'Create'}
+                  </PrimaryButton>
+                  <GhostButton type="button" onClick={cancelCreate}>
+                    Cancel
+                  </GhostButton>
+                </div>
               </form>
             )}
 
@@ -348,6 +426,12 @@ function EmptyHome({
   creating,
   newName,
   setNewName,
+  newClient,
+  setNewClient,
+  newContractor,
+  setNewContractor,
+  newConsultant,
+  setNewConsultant,
   onStart,
   onCancel,
   onSubmit,
@@ -357,6 +441,12 @@ function EmptyHome({
   creating: boolean
   newName: string
   setNewName: (v: string) => void
+  newClient: string
+  setNewClient: (v: string) => void
+  newContractor: string
+  setNewContractor: (v: string) => void
+  newConsultant: string
+  setNewConsultant: (v: string) => void
   onStart: () => void
   onCancel: () => void
   onSubmit: (e: FormEvent) => void
@@ -376,17 +466,47 @@ function EmptyHome({
       ) : (
         <form onSubmit={onSubmit} className="w-full max-w-md flex flex-col gap-3 text-left">
           <label className="text-sm">
-            <span className="text-steel text-xs">Project name</span>
+            <span className="text-steel text-xs">
+              Project name <span className="text-signal">*</span>
+            </span>
             <input
               autoFocus
+              required
               className="mt-1 w-full border border-steel-border bg-panel px-3 py-2.5 text-sm text-ink outline-none focus:border-signal"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Tower A — Substructure"
             />
           </label>
+          <label className="text-sm">
+            <span className="text-steel text-xs">Client</span>
+            <input
+              className="mt-1 w-full border border-steel-border bg-panel px-3 py-2.5 text-sm text-ink outline-none focus:border-signal"
+              value={newClient}
+              onChange={(e) => setNewClient(e.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="text-steel text-xs">Contractor</span>
+            <input
+              className="mt-1 w-full border border-steel-border bg-panel px-3 py-2.5 text-sm text-ink outline-none focus:border-signal"
+              value={newContractor}
+              onChange={(e) => setNewContractor(e.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="text-steel text-xs">Consultant</span>
+            <input
+              className="mt-1 w-full border border-steel-border bg-panel px-3 py-2.5 text-sm text-ink outline-none focus:border-signal"
+              value={newConsultant}
+              onChange={(e) => setNewConsultant(e.target.value)}
+              placeholder="Optional"
+            />
+          </label>
           <div className="flex gap-2 justify-center">
-            <PrimaryButton type="submit" disabled={pending}>
+            <PrimaryButton type="submit" disabled={pending || !newName.trim()}>
               {pending ? 'Creating…' : 'Create project'}
             </PrimaryButton>
             <GhostButton type="button" onClick={onCancel}>
@@ -433,7 +553,16 @@ function ProjectCard({
           <div className="min-w-0">
             <h3 className="text-[14.5px] font-semibold text-ink mb-0.5 truncate">{project.name}</h3>
             <div className="text-xs text-steel truncate">
-              {project.location || project.client || project.number || '—'}
+              {[
+                project.client,
+                project.contractor,
+                project.consultant,
+                project.location,
+                project.number,
+              ]
+                .filter(Boolean)
+                .slice(0, 2)
+                .join(' · ') || '—'}
             </div>
           </div>
           <VerifiedRibbon status={ribbon} />

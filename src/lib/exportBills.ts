@@ -78,6 +78,7 @@ function projectMetaHtml(project: Project, currency: string): string {
     `<h1>${escapeHtml(p.name)}</h1>` +
     `<div class="meta">Project ${escapeHtml(p.number)}` +
     (p.client ? ` &nbsp;·&nbsp; Client: ${escapeHtml(p.client)}` : '') +
+    (p.consultant ? ` &nbsp;·&nbsp; Consultant: ${escapeHtml(p.consultant)}` : '') +
     (p.location ? ` &nbsp;·&nbsp; ${escapeHtml(p.location)}` : '') +
     `<br>Currency ${escapeHtml(currency)}` +
     ` &nbsp;·&nbsp; Rev ${escapeHtml(p.revision)} &nbsp;·&nbsp; ${escapeHtml(p.date)}` +
@@ -328,6 +329,7 @@ export function exportCostPlanPDF(
       `<div class="banner"><h1>${escapeHtml(p.name)} — Cost Plan</h1>` +
       `<div class="meta">Project ${escapeHtml(p.number)}` +
       (p.client ? ` · Client: ${escapeHtml(p.client)}` : '') +
+      (p.consultant ? ` · Consultant: ${escapeHtml(p.consultant)}` : '') +
       (p.location ? ` · ${escapeHtml(p.location)}` : '') +
       `<br>Currency ${escapeHtml(cur)} · Rev ${escapeHtml(p.revision)} · ${escapeHtml(p.date)}` +
       (p.preparedBy ? ` · Prepared by ${escapeHtml(p.preparedBy)}` : '') +
@@ -381,6 +383,7 @@ function projectInfoAoa(project: Project, currency: string): (string | number)[]
     ['Number', p.number],
     ['Client', p.client],
     ['Contractor', p.contractor],
+    ['Consultant', p.consultant || ''],
     ['Location', p.location],
     ['Currency', currency],
     ['Revision', p.revision],

@@ -10,15 +10,35 @@ export function ElementTree({
   selectedKey,
   counts,
   onSelect,
+  registerActive = false,
+  onOpenRegister,
 }: {
   selectedKey: string
   counts: Record<string, number>
   onSelect: (el: ElementDef) => void
+  registerActive?: boolean
+  onOpenRegister?: () => void
 }) {
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
 
   return (
     <aside className="w-[230px] flex-shrink-0 border-r border-steel-border overflow-y-auto py-5 bg-bg/40">
+      {onOpenRegister && (
+        <button
+          type="button"
+          onClick={onOpenRegister}
+          className={`w-full text-left px-5 py-2 mb-2 border-l-2 text-[13px] font-medium ${
+            registerActive
+              ? 'bg-panel border-signal text-ink'
+              : 'border-transparent text-ink/90 hover:bg-panel/60'
+          }`}
+        >
+          Element Register
+          <span className="block text-[10px] font-normal text-steel mt-0.5">
+            24 codes · units · NRM2 · overlap
+          </span>
+        </button>
+      )}
       {ELEMENT_TREE.map((mod) => {
         const isCollapsed = !!collapsed[mod.module]
         return (

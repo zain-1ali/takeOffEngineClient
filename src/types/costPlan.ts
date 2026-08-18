@@ -10,6 +10,7 @@ export type CostPlanWorkCategory =
   | 'Plaster'
   | 'Paint'
   | 'Finishes'
+  | 'MEP'
   | 'Excavation'
   | 'Disposal'
   | 'Other'

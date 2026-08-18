@@ -2,14 +2,23 @@ export type AuthUser = {
   id: string
   email: string
   name: string
+  emailVerified?: boolean
 }
 
 export class ApiError extends Error {
   status: number
+  code?: string
+  email?: string
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    extras?: { code?: string; email?: string },
+  ) {
     super(message)
     this.status = status
+    this.code = extras?.code
+    this.email = extras?.email
   }
 }
 
@@ -54,7 +63,7 @@ export async function api<T>(
   })
 
   const text = await res.text()
-  let data: { error?: string } | null = null
+  let data: { error?: string; code?: string; email?: string } | null = null
   if (text) {
     try {
       data = JSON.parse(text)
@@ -67,10 +76,10 @@ export async function api<T>(
     if (res.status === 401) {
       setAccessToken(null)
     }
-    throw new ApiError(
-      res.status,
-      data?.error || `Request failed (${res.status})`,
-    )
+    throw new ApiError(res.status, data?.error || `Request failed (${res.status})`, {
+      code: data?.code,
+      email: data?.email,
+    })
   }
 
   return data as T

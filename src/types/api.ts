@@ -64,6 +64,7 @@ export type Project = {
   number: string
   client: string
   contractor: string
+  consultant: string
   location: string
   currency: string
   /** Canonical `metric` | `imperial` (legacy strings still parsed). */
@@ -104,6 +105,8 @@ export type DashboardProjectCard = {
   name: string
   number: string
   client: string
+  contractor?: string
+  consultant?: string
   location: string
   currency: string
   defaultGrade: string

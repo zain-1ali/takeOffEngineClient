@@ -12,6 +12,7 @@ import { ScheduleTab } from '../components/schedule/ScheduleTab'
 import { ModelTab } from '../components/model/ModelTab'
 import { ElementReportsTab } from '../components/reports/ElementReportsTab'
 import { ProjectReportsView } from '../components/reports/ProjectReportsView'
+import { ElementRegisterView } from '../components/register/ElementRegisterView'
 import { ELEMENT_ENGINES } from '../elementEngines'
 import { findElement, type FlowStepId } from '../constants/elementTree'
 import type { ElementDef } from '../constants/elementTree'
@@ -54,6 +55,7 @@ export default function WorkspacePage() {
 
   const element = useMemo(() => findElement(elementKey), [elementKey])
   const showProjectReports = activeStep === 'reports'
+  const showElementRegister = activeStep === 'register'
 
   function onStep(id: FlowStepId) {
     if (id === 'project') setModal('project')
@@ -62,6 +64,8 @@ export default function WorkspacePage() {
     else if (id === 'model') {
       setActiveStep('model')
       setTab('schedule')
+    } else if (id === 'register') {
+      setActiveStep('register')
     } else if (id === 'reports') {
       setActiveStep('reports')
     }
@@ -107,9 +111,11 @@ export default function WorkspacePage() {
 
       <div className="flex-1 flex min-h-0 border-t border-steel-border">
         <ElementTree
-          selectedKey={elementKey}
+          selectedKey={showElementRegister ? '' : elementKey}
           counts={countsQuery.data || {}}
           onSelect={onSelectElement}
+          registerActive={showElementRegister}
+          onOpenRegister={() => setActiveStep('register')}
         />
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-bg/20">
@@ -131,9 +137,14 @@ export default function WorkspacePage() {
             {showProjectReports && (
               <span className="text-xs text-steel/70">Used when scope is “This floor”</span>
             )}
+            {showElementRegister && (
+              <span className="text-xs text-steel/70">
+                Master takeoff mapping — units, rules, materials, NRM2, overlap
+              </span>
+            )}
           </div>
 
-          {!showProjectReports && (
+          {!showProjectReports && !showElementRegister && (
             <div className="flex gap-0.5 px-6 mt-3 border-b border-steel-border flex-shrink-0">
               {(
                 [
@@ -164,7 +175,15 @@ export default function WorkspacePage() {
           )}
 
           <div className="flex-1 min-h-0 overflow-hidden">
-            {showProjectReports ? (
+            {showElementRegister ? (
+              <ElementRegisterView
+                onOpenElement={(key) => {
+                  setElementKey(key)
+                  setActiveStep('model')
+                  setTab('schedule')
+                }}
+              />
+            ) : showProjectReports ? (
               <ProjectReportsView
                 project={project}
                 floorId={currentFloorId}

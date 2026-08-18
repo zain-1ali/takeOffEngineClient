@@ -34,7 +34,7 @@ export type OutputCol = {
 export type ElementSchema = {
   label: string
   markPrefix: string
-  reportKind: 'structural' | 'masonry' | 'finish' | 'earthworks'
+  reportKind: 'structural' | 'masonry' | 'finish' | 'earthworks' | 'mep'
   hasGrade: boolean
   hasRebar: boolean
   shapes: Record<string, { label: string }>
@@ -951,6 +951,464 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
       { key: 'area', label: 'Area (m²)', unit: 'm²', dec: 2, resultKey: 'totalAreaM2' },
     ],
   },
+
+  MASONRY: {
+    label: 'Masonry / Infill Walls',
+    markPrefix: 'MW',
+    reportKind: 'masonry',
+    hasGrade: false,
+    hasRebar: false,
+    locationOptions: ['Below-grade', 'Exterior', 'Interior'],
+    defaultLocation: 'Interior',
+    shapes: { LINEAR: { label: 'Linear' } },
+    addButtons: [{ shape: 'LINEAR', label: '+ Add wall', primary: true }],
+    geometryByShape: {
+      LINEAR: [
+        { key: 'wallLength', label: 'Len (m)', min: 0.5, max: 200, step: 0.1, dec: 2, def: 8 },
+        { key: 'wallHeight', label: 'Ht (m)', min: 0.5, max: 12, step: 0.1, dec: 2, def: 3 },
+        { key: 'thickness', label: 'T (m)', min: 0.05, max: 1, step: 0.01, dec: 2, def: 0.2 },
+        { key: 'openingArea', label: 'Opng (m²)', min: 0, max: 100, step: 0.1, dec: 2, def: 2 },
+        {
+          key: 'areaOverride',
+          label: 'Override (m²)',
+          min: 0,
+          max: 5000,
+          step: 0.1,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+      ],
+    },
+    rebarFields: [],
+    specList: [
+      'Concrete block 200mm',
+      'Concrete block 150mm',
+      'Clay brick',
+      'AAC block',
+    ],
+    outputCols: [
+      { key: 'area', label: 'Face (m²)', unit: 'm²', dec: 2, resultKey: 'totalAreaM2' },
+      { key: 'mas', label: 'Mas (m³)', unit: 'm³', dec: 2, resultKey: 'totalMasonryM3' },
+      { key: 'mortar', label: 'Mortar (m³)', unit: 'm³', dec: 2, resultKey: 'totalMortarM3' },
+    ],
+  },
+
+  DOORS_WINDOWS: {
+    label: 'Doors & Windows',
+    markPrefix: 'DW',
+    reportKind: 'finish',
+    hasGrade: false,
+    hasRebar: false,
+    locationOptions: ['Exterior', 'Interior'],
+    defaultLocation: 'Interior',
+    shapes: { UNIT: { label: 'Unit' } },
+    addButtons: [{ shape: 'UNIT', label: '+ Add unit', primary: true }],
+    geometryByShape: {
+      UNIT: [
+        {
+          key: 'openingType',
+          label: 'Type',
+          type: 'select',
+          options: ['Door', 'Window', 'Louvre', 'Penetration', 'Other'],
+          def: 'Door',
+        },
+        { key: 'width', label: 'W (m)', min: 0.3, max: 6, step: 0.05, dec: 2, def: 0.9 },
+        { key: 'height', label: 'H (m)', min: 0.3, max: 6, step: 0.05, dec: 2, def: 2.1 },
+      ],
+    },
+    rebarFields: [],
+    specList: ['Door', 'Window', 'Louvre'],
+    outputCols: [
+      { key: 'nos', label: 'Nos', unit: 'nos', dec: 0, resultKey: 'totalNos' },
+      { key: 'opArea', label: 'Area (m²)', unit: 'm²', dec: 2, resultKey: 'totalOpeningAreaM2' },
+      { key: 'peri', label: 'Peri (m)', unit: 'm', dec: 2, resultKey: 'totalPerimeterM' },
+    ],
+  },
+
+  LINTELS: {
+    label: 'Lintels',
+    markPrefix: 'LN',
+    reportKind: 'structural',
+    hasGrade: true,
+    hasRebar: true,
+    shapes: {
+      PRECAST: { label: 'Precast' },
+      INSITU: { label: 'In-situ' },
+    },
+    addButtons: [
+      { shape: 'PRECAST', label: '+ Precast', primary: true },
+      { shape: 'INSITU', label: '+ In-situ' },
+    ],
+    geometryByShape: {
+      PRECAST: [
+        { key: 'clearSpan', label: 'Clear (m)', min: 0.3, max: 6, step: 0.05, dec: 2, def: 1 },
+        { key: 'bearingEach', label: 'Bearing (m)', min: 0.05, max: 0.5, step: 0.01, dec: 2, def: 0.15 },
+        {
+          key: 'length',
+          label: 'Len ovrd (m)',
+          min: 0.3,
+          max: 8,
+          step: 0.05,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        { key: 'width', label: 'W (m)', min: 0.1, max: 0.6, step: 0.01, dec: 2, def: 0.2 },
+        { key: 'depth', label: 'D (m)', min: 0.1, max: 0.6, step: 0.01, dec: 2, def: 0.15 },
+      ],
+      INSITU: [
+        { key: 'clearSpan', label: 'Clear (m)', min: 0.3, max: 6, step: 0.05, dec: 2, def: 1 },
+        { key: 'bearingEach', label: 'Bearing (m)', min: 0.05, max: 0.5, step: 0.01, dec: 2, def: 0.15 },
+        {
+          key: 'length',
+          label: 'Len ovrd (m)',
+          min: 0.3,
+          max: 8,
+          step: 0.05,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        { key: 'width', label: 'W (m)', min: 0.1, max: 0.6, step: 0.01, dec: 2, def: 0.2 },
+        { key: 'depth', label: 'D (m)', min: 0.1, max: 0.6, step: 0.01, dec: 2, def: 0.15 },
+      ],
+    },
+    rebarFields: [
+      { key: 'cover', label: 'Cover (mm)', min: 20, max: 75, step: 5, dec: 0, def: 25 },
+      { key: 'topBarCount', label: 'Top n', type: 'int', min: 1, max: 8, step: 1, dec: 0, def: 2 },
+      { key: 'topBarDia', label: 'Top dia', type: 'select', options: BAR_SIZES, def: 12 },
+      { key: 'bottomBarCount', label: 'Bot n', type: 'int', min: 1, max: 8, step: 1, dec: 0, def: 2 },
+      { key: 'bottomBarDia', label: 'Bot dia', type: 'select', options: BAR_SIZES, def: 12 },
+      { key: 'linkDia', label: 'Link dia', type: 'select', options: BAR_SIZES, def: 8 },
+      { key: 'linkSpacing', label: 'Link spc', min: 75, max: 300, step: 25, dec: 0, def: 200 },
+    ],
+    outputCols: [
+      { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
+      ...STRUCTURAL_OUTPUT,
+    ],
+  },
+
+  SKIRTING: {
+    label: 'Skirting / Baseboards',
+    markPrefix: 'SK',
+    reportKind: 'finish',
+    hasGrade: false,
+    hasRebar: false,
+    shapes: { RUN: { label: 'Run' } },
+    addButtons: [{ shape: 'RUN', label: '+ Add run', primary: true }],
+    geometryByShape: {
+      RUN: [
+        {
+          key: 'roomLabel',
+          label: 'Room',
+          type: 'text',
+          def: '',
+          optional: true,
+        },
+        { key: 'roomLength', label: 'L (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 5 },
+        { key: 'roomWidth', label: 'W (m)', min: 0.5, max: 60, step: 0.1, dec: 2, def: 4 },
+        {
+          key: 'perimeter',
+          label: 'Peri ovrd (m)',
+          min: 0,
+          max: 500,
+          step: 0.1,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        {
+          key: 'doorDeductionLm',
+          label: 'Door ded. (m)',
+          min: 0,
+          max: 50,
+          step: 0.05,
+          dec: 2,
+          def: '',
+          optional: true,
+        },
+        {
+          key: 'openingArea',
+          label: 'Doors tbl',
+          min: 0,
+          max: 100,
+          step: 0.1,
+          dec: 2,
+          def: 0,
+          optional: true,
+        },
+        {
+          key: 'cornerCount',
+          label: 'Corners',
+          type: 'int',
+          min: 0,
+          max: 40,
+          step: 1,
+          dec: 0,
+          def: 4,
+        },
+      ],
+    },
+    rebarFields: [],
+    specList: ['Timber skirting', 'MDF skirting', 'Tile skirting'],
+    outputCols: [
+      { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
+      { key: 'corners', label: 'Corners', unit: 'nos', dec: 0, resultKey: 'totalCorners' },
+    ],
+  },
+
+  DUCTS: {
+    label: 'Air Distribution Ducts',
+    markPrefix: 'DU',
+    reportKind: 'mep',
+    hasGrade: false,
+    hasRebar: false,
+    shapes: { RUN: { label: 'Run' } },
+    addButtons: [{ shape: 'RUN', label: '+ Add run', primary: true }],
+    geometryByShape: {
+      RUN: [
+        {
+          key: 'system',
+          label: 'System',
+          type: 'select',
+          options: ['Supply', 'Return', 'Exhaust'],
+          def: 'Supply',
+        },
+        {
+          key: 'section',
+          label: 'Section',
+          type: 'select',
+          options: ['Rectangular', 'Round'],
+          def: 'Rectangular',
+        },
+        { key: 'width', label: 'W (m)', min: 0.1, max: 3, step: 0.05, dec: 2, def: 0.4 },
+        { key: 'height', label: 'H (m)', min: 0.1, max: 3, step: 0.05, dec: 2, def: 0.3 },
+        { key: 'diameter', label: 'Dia (m)', min: 0.1, max: 2, step: 0.05, dec: 2, def: 0.3 },
+        { key: 'length', label: 'Len (m)', min: 0.1, max: 200, step: 0.1, dec: 2, def: 10 },
+        {
+          key: 'jointSpacing',
+          label: 'Joint spc (m)',
+          min: 0.5,
+          max: 5,
+          step: 0.1,
+          dec: 2,
+          def: 1.2,
+        },
+      ],
+    },
+    rebarFields: [],
+    specList: ['Galvanised steel duct', 'Insulated GI duct'],
+    outputCols: [
+      { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
+      { key: 'surf', label: 'Surf (m²)', unit: 'm²', dec: 2, resultKey: 'totalSurfaceM2' },
+      { key: 'wt', label: 'Wt (kg)', unit: 'kg', dec: 1, resultKey: 'totalWeightKg' },
+      { key: 'joints', label: 'Joints', unit: 'nos', dec: 0, resultKey: 'totalJoints' },
+    ],
+  },
+
+  DUCT_FITTINGS: {
+    label: 'Duct Fittings & HVAC',
+    markPrefix: 'DF',
+    reportKind: 'mep',
+    hasGrade: false,
+    hasRebar: false,
+    shapes: { UNIT: { label: 'Unit' } },
+    addButtons: [{ shape: 'UNIT', label: '+ Add unit', primary: true }],
+    geometryByShape: {
+      UNIT: [
+        {
+          key: 'fittingType',
+          label: 'Type',
+          type: 'select',
+          options: [
+            'Elbow',
+            'Tee',
+            'Reducer',
+            'Damper',
+            'VAV',
+            'Diffuser',
+            'AHU',
+            'Other',
+          ],
+          def: 'Elbow',
+        },
+        {
+          key: 'equivalentLength',
+          label: 'Eq len (m)',
+          min: 0,
+          max: 20,
+          step: 0.1,
+          dec: 2,
+          def: 1.5,
+        },
+        { key: 'width', label: 'W (m)', min: 0, max: 3, step: 0.05, dec: 2, def: 0.4 },
+        { key: 'height', label: 'H (m)', min: 0, max: 3, step: 0.05, dec: 2, def: 0.3 },
+      ],
+    },
+    rebarFields: [],
+    specList: ['Elbow', 'Tee', 'VAV', 'AHU'],
+    outputCols: [
+      { key: 'nos', label: 'Nos', unit: 'nos', dec: 0, resultKey: 'totalNos' },
+      {
+        key: 'eq',
+        label: 'Eq (m)',
+        unit: 'm',
+        dec: 2,
+        resultKey: 'totalEquivalentLengthM',
+      },
+    ],
+  },
+
+  PIPES: {
+    label: 'Pipes & Plumbing',
+    markPrefix: 'PP',
+    reportKind: 'mep',
+    hasGrade: false,
+    hasRebar: false,
+    shapes: { RUN: { label: 'Run' } },
+    addButtons: [{ shape: 'RUN', label: '+ Add run', primary: true }],
+    geometryByShape: {
+      RUN: [
+        {
+          key: 'system',
+          label: 'System',
+          type: 'select',
+          options: ['Cold water', 'Hot water', 'Drainage', 'Fire', 'Other'],
+          def: 'Cold water',
+        },
+        {
+          key: 'material',
+          label: 'Material',
+          type: 'select',
+          options: ['uPVC', 'Copper', 'Steel'],
+          def: 'uPVC',
+        },
+        {
+          key: 'diameterMm',
+          label: 'DN (mm)',
+          type: 'int',
+          min: 10,
+          max: 600,
+          step: 5,
+          dec: 0,
+          def: 50,
+        },
+        { key: 'length', label: 'Len (m)', min: 0.1, max: 500, step: 0.1, dec: 2, def: 25 },
+        {
+          key: 'insulated',
+          label: 'Insulated',
+          type: 'select',
+          options: ['No', 'Yes'],
+          def: 'Yes',
+        },
+        {
+          key: 'fittingsNos',
+          label: 'Fittings',
+          type: 'int',
+          min: 0,
+          max: 500,
+          step: 1,
+          dec: 0,
+          def: 0,
+        },
+      ],
+    },
+    rebarFields: [],
+    specList: ['uPVC', 'Copper', 'Steel'],
+    outputCols: [
+      { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
+      {
+        key: 'ins',
+        label: 'Insul (m)',
+        unit: 'm',
+        dec: 2,
+        resultKey: 'totalInsulationM',
+      },
+      {
+        key: 'fit',
+        label: 'Fittings',
+        unit: 'nos',
+        dec: 0,
+        resultKey: 'totalFittingsNos',
+      },
+    ],
+  },
+
+  ELECTRICAL: {
+    label: 'Conduits & Cable Trays',
+    markPrefix: 'EL',
+    reportKind: 'mep',
+    hasGrade: false,
+    hasRebar: false,
+    shapes: {
+      CONDUIT: { label: 'Conduit' },
+      TRAY: { label: 'Cable tray' },
+      CABLE: { label: 'Cable' },
+    },
+    addButtons: [
+      { shape: 'CONDUIT', label: '+ Conduit', primary: true },
+      { shape: 'TRAY', label: '+ Tray' },
+      { shape: 'CABLE', label: '+ Cable' },
+    ],
+    geometryByShape: {
+      CONDUIT: [
+        {
+          key: 'sizeMm',
+          label: 'Size (mm)',
+          type: 'int',
+          min: 10,
+          max: 150,
+          step: 5,
+          dec: 0,
+          def: 25,
+        },
+        { key: 'length', label: 'Len (m)', min: 0.1, max: 500, step: 0.1, dec: 2, def: 40 },
+      ],
+      TRAY: [
+        {
+          key: 'sizeMm',
+          label: 'Width (mm)',
+          type: 'int',
+          min: 50,
+          max: 600,
+          step: 25,
+          dec: 0,
+          def: 150,
+        },
+        { key: 'length', label: 'Len (m)', min: 0.1, max: 500, step: 0.1, dec: 2, def: 20 },
+        {
+          key: 'cableLength',
+          label: 'Cable (m)',
+          min: 0,
+          max: 2000,
+          step: 0.1,
+          dec: 2,
+          def: 0,
+          optional: true,
+        },
+      ],
+      CABLE: [
+        {
+          key: 'sizeMm',
+          label: 'OD (mm)',
+          type: 'int',
+          min: 1,
+          max: 50,
+          step: 1,
+          dec: 0,
+          def: 10,
+        },
+        { key: 'length', label: 'Len (m)', min: 0.1, max: 2000, step: 0.1, dec: 2, def: 50 },
+      ],
+    },
+    rebarFields: [],
+    specList: ['PVC conduit', 'GI cable tray', 'Power cable'],
+    outputCols: [
+      { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
+      { key: 'cable', label: 'Cable (m)', unit: 'm', dec: 2, resultKey: 'totalCableM' },
+    ],
+  },
 }
 
 /** Build API create payload for a new instance of the given element/shape. */
@@ -968,6 +1426,10 @@ export function buildDefaultInstancePayload(
   const geometry: Record<string, unknown> = {}
   geoFields.forEach((f) => {
     if (f.optional) return
+    if (f.type === 'text' || f.type === 'select') {
+      geometry[f.key] = f.def
+      return
+    }
     geometry[f.key] = Number(f.def)
   })
 

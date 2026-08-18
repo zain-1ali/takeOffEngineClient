@@ -31,6 +31,7 @@ export function ProjectModal({
     number: project.number,
     client: project.client,
     contractor: project.contractor,
+    consultant: project.consultant || '',
     location: project.location,
     currency: project.currency,
     units: project.units,
@@ -58,6 +59,7 @@ export function ProjectModal({
       number: project.number,
       client: project.client,
       contractor: project.contractor,
+      consultant: project.consultant || '',
       location: project.location,
       currency: project.currency,
       units: project.units,
@@ -166,6 +168,13 @@ export function ProjectModal({
             className={inputClass}
             value={form.contractor}
             onChange={(e) => set('contractor', e.target.value)}
+          />
+        </Field>
+        <Field label="Consultant">
+          <input
+            className={inputClass}
+            value={form.consultant}
+            onChange={(e) => set('consultant', e.target.value)}
           />
         </Field>
         <Field label="Location">

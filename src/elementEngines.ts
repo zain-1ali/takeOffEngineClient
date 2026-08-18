@@ -17,6 +17,18 @@ import { buildRaftModel } from './three/buildRaftModel'
 import { buildStoneModel } from './three/buildStoneModel'
 import { buildStripModel } from './three/buildStripModel'
 import { buildWallModel } from './three/buildWallModel'
+import {
+  buildSkirtingModel,
+  buildMasonryModel,
+  buildDoorsWindowsModel,
+  buildLintelModel,
+} from './three/buildM2Models'
+import {
+  buildDuctModel,
+  buildPipeModel,
+  buildElectricalModel,
+  buildDuctFittingModel,
+} from './three/buildM3Models'
 
 export type FrontendElementEngine = ElementSchema & {
   build3D: (instance: any) => THREE.Group
@@ -44,6 +56,9 @@ export const ELEMENT_ENGINES: Record<string, FrontendElementEngine> = {
   RAMPS: engine('RAMPS', buildRampModel),
   STONE_STRIP: engine('STONE_STRIP', buildStoneModel),
   WALLS: engine('WALLS', buildWallModel),
+  MASONRY: engine('MASONRY', buildMasonryModel),
+  DOORS_WINDOWS: engine('DOORS_WINDOWS', buildDoorsWindowsModel),
+  LINTELS: engine('LINTELS', buildLintelModel),
   FLOOR_FINISH: engine('FLOOR_FINISH', (instance) =>
     buildFinishModel('FLOOR', instance),
   ),
@@ -53,4 +68,9 @@ export const ELEMENT_ENGINES: Record<string, FrontendElementEngine> = {
   CEILING_FINISH: engine('CEILING_FINISH', (instance) =>
     buildFinishModel('CEILING', instance),
   ),
+  SKIRTING: engine('SKIRTING', buildSkirtingModel),
+  DUCTS: engine('DUCTS', buildDuctModel),
+  DUCT_FITTINGS: engine('DUCT_FITTINGS', buildDuctFittingModel),
+  PIPES: engine('PIPES', buildPipeModel),
+  ELECTRICAL: engine('ELECTRICAL', buildElectricalModel),
 }

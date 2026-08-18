@@ -22,10 +22,26 @@ export function getDashboard() {
   return api<DashboardPayload>('/api/projects/dashboard')
 }
 
-export function createProject(name: string) {
+export type CreateProjectInput = {
+  name: string
+  client?: string
+  contractor?: string
+  consultant?: string
+}
+
+export function createProject(input: CreateProjectInput | string) {
+  const body =
+    typeof input === 'string'
+      ? { name: input }
+      : {
+          name: input.name,
+          client: input.client ?? '',
+          contractor: input.contractor ?? '',
+          consultant: input.consultant ?? '',
+        }
   return api<{ project: Project; floors: Floor[] }>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   })
 }
 
