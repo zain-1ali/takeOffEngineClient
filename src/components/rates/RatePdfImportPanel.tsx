@@ -18,8 +18,9 @@ import { DataTable, GhostButton, PrimaryButton } from '../ui'
 const inputCls =
   'border border-steel-border bg-bg px-1.5 py-1 text-xs text-ink outline-none'
 
-function money(n: number, currency: string): string {
-  return `${currency} ${n.toLocaleString(undefined, {
+function money(n: number | null | undefined, currency: string): string {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
+  return `${currency || 'USD'} ${n.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`

@@ -46,8 +46,8 @@ function formatQty(v: unknown, dec: number): string {
 }
 
 function formatMoney(v: number | null | undefined, currency: string): string {
-  if (v == null || Number.isNaN(v)) return '—'
-  return `${currency} ${v.toLocaleString(undefined, {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '—'
+  return `${currency || 'USD'} ${v.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`

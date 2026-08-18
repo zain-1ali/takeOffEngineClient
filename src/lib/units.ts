@@ -75,8 +75,8 @@ export function displayOutputLabel(
 }
 
 export function formatMoney(n: number | null | undefined, currency: string): string {
-  if (n == null || Number.isNaN(n)) return '—'
-  return `${currency} ${n.toLocaleString(undefined, {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
+  return `${currency || 'USD'} ${n.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`

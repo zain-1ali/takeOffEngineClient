@@ -37,20 +37,27 @@ function relativeTime(iso: string): string {
 }
 
 /** Split a currency total into StatCard value + unit (e.g. 18.4 + "M KES"). */
-function formatStatMoney(value: number, currency: string): { value: string; unit: string } {
-  if (value >= 1_000_000) {
-    return { value: (value / 1_000_000).toFixed(1), unit: `M ${currency}` }
+function formatStatMoney(
+  value: number | null | undefined,
+  currency: string,
+): { value: string; unit: string } {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0
+  const cur = currency || 'USD'
+  if (n >= 1_000_000) {
+    return { value: (n / 1_000_000).toFixed(1), unit: `M ${cur}` }
   }
-  if (value >= 1_000) {
-    return { value: (value / 1_000).toFixed(1), unit: `k ${currency}` }
+  if (n >= 1_000) {
+    return { value: (n / 1_000).toFixed(1), unit: `k ${cur}` }
   }
-  return { value: value.toFixed(0), unit: currency }
+  return { value: n.toFixed(0), unit: cur }
 }
 
-function cardPrice(value: number, currency: string): string {
-  if (value >= 1_000_000) return `${currency} ${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${currency} ${(value / 1_000).toFixed(1)}k`
-  return `${currency} ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+function cardPrice(value: number | null | undefined, currency: string): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0
+  const cur = currency || 'USD'
+  if (n >= 1_000_000) return `${cur} ${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${cur} ${(n / 1_000).toFixed(1)}k`
+  return `${cur} ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 }
 
 export default function DashboardPage() {

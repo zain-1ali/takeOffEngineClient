@@ -23,7 +23,7 @@ function fmtPct(p: number | undefined): string {
 }
 
 function money(n: number | null | undefined, currency: string): string {
-  if (n == null || Number.isNaN(n)) return '—'
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
   return formatMoney(n, currency)
 }
 
