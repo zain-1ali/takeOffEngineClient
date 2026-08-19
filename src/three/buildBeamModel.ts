@@ -5,6 +5,11 @@ import { addPlanDims } from './dimensions'
 import { makeBoxMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
+export type BeamBarGroup = {
+  diameterMm: number
+  barCount: number
+}
+
 export type BeamInstance = {
   shape: 'RECTANGULAR' | 'T_SECTION' | 'L_SECTION' | 'CANTILEVER_TAPERED' | 'GROUND_TIE' | string
   spanLength: number
@@ -17,12 +22,28 @@ export type BeamInstance = {
   supportDepth?: number
   tipDepth?: number
   cover: number
-  topBarCount: number
-  topBarDia: number
-  bottomBarCount: number
-  bottomBarDia: number
+  topBars?: BeamBarGroup[]
+  bottomBars?: BeamBarGroup[]
+  topBarCount?: number
+  topBarDia?: number
+  bottomBarCount?: number
+  bottomBarDia?: number
   linkDia: number
   linkSpacing: number
+}
+
+function resolveBarGroups(
+  groups: BeamBarGroup[] | undefined,
+  legacyCount: number | undefined,
+  legacyDia: number | undefined,
+): BeamBarGroup[] {
+  if (Array.isArray(groups) && groups.length > 0) {
+    return groups.filter((g) => g.barCount > 0 && g.diameterMm > 0)
+  }
+  const dia = legacyDia || 0
+  const count = legacyCount || 0
+  if (dia > 0 && count > 0) return [{ diameterMm: dia, barCount: count }]
+  return []
 }
 
 function taperedConcrete(f: BeamInstance): THREE.Group {
@@ -153,32 +174,49 @@ export function buildBeamModel(f: BeamInstance): THREE.Group {
     const tipDepth =
       f.shape === 'CANTILEVER_TAPERED' ? f.tipDepth || 0 : supportDepth
     const halfCage = Math.max(0.01, cageWidth / 2 - cover)
+    const topGroups = resolveBarGroups(f.topBars, f.topBarCount, f.topBarDia)
+    const bottomGroups = resolveBarGroups(
+      f.bottomBars,
+      f.bottomBarCount,
+      f.bottomBarDia,
+    )
+    const topTotal = topGroups.reduce((s, g) => s + g.barCount, 0)
+    const bottomTotal = bottomGroups.reduce((s, g) => s + g.barCount, 0)
 
-    distribute(f.topBarCount, halfCage).forEach((z) => {
-      const bar = makeRebarBar(
-        -spanHalf,
-        supportDepth - cover,
-        z,
-        spanHalf,
-        supportDepth - cover,
-        z,
-        f.topBarDia,
-      )
-      if (bar) group.add(bar)
-    })
-    distribute(f.bottomBarCount, halfCage).forEach((z) => {
-      const bar = makeRebarBar(
-        -spanHalf,
-        cover,
-        z,
-        spanHalf,
-        supportDepth - tipDepth + cover,
-        z,
-        f.bottomBarDia,
-      )
-      if (bar) group.add(bar)
-    })
-
+    let topIdx = 0
+    for (const barGroup of topGroups) {
+      for (let b = 0; b < barGroup.barCount; b++) {
+        const z = distribute(topTotal, halfCage)[topIdx] ?? 0
+        topIdx += 1
+        const bar = makeRebarBar(
+          -spanHalf,
+          supportDepth - cover,
+          z,
+          spanHalf,
+          supportDepth - cover,
+          z,
+          barGroup.diameterMm,
+        )
+        if (bar) group.add(bar)
+      }
+    }
+    let botIdx = 0
+    for (const barGroup of bottomGroups) {
+      for (let b = 0; b < barGroup.barCount; b++) {
+        const z = distribute(bottomTotal, halfCage)[botIdx] ?? 0
+        botIdx += 1
+        const bar = makeRebarBar(
+          -spanHalf,
+          cover,
+          z,
+          spanHalf,
+          supportDepth - tipDepth + cover,
+          z,
+          barGroup.diameterMm,
+        )
+        if (bar) group.add(bar)
+      }
+    }
     const linkCount = barCountForSpan(f.spanLength, f.linkSpacing)
     for (let i = 0; i < linkCount; i++) {
       const ratio = i / (linkCount - 1 || 1)

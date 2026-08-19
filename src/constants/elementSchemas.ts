@@ -8,12 +8,12 @@ export const BAR_SIZES = [8, 10, 12, 16, 20, 25, 32, 40]
 export type FieldDef = {
   key: string
   label: string
-  type?: 'text' | 'int' | 'number' | 'select'
+  type?: 'text' | 'int' | 'number' | 'select' | 'bool' | 'barGroups' | 'meshGroups'
   min?: number
   max?: number
   step?: number
   dec?: number
-  def: string | number
+  def: string | number | boolean
   options?: number[] | string[]
   /** When true, omitted from create payload; empty schedule input clears the key. */
   optional?: boolean
@@ -125,11 +125,25 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 25, max: 100, step: 5, dec: 0, def: 50 },
-      { key: 'bottomMainDia', label: 'Bot dia', type: 'select', options: BAR_SIZES, def: 16 },
-      { key: 'bottomMainSpacing', label: 'Bot spc', min: 75, max: 300, step: 25, dec: 0, def: 150 },
+      { key: 'bottomMainBars', label: 'Bot main', type: 'meshGroups', def: 0 },
+      { key: 'bottomDistBars', label: 'Bot dist.', type: 'meshGroups', def: 0 },
+      { key: 'topMeshEnabled', label: 'Top mesh', type: 'bool', def: false },
+      { key: 'topMainBars', label: 'Top main', type: 'meshGroups', def: 0 },
+      { key: 'topDistBars', label: 'Top dist.', type: 'meshGroups', def: 0 },
     ],
     rebarDefaults: {
-      topMeshEnabled: false,
+      bottomMainBars: [{ diameterMm: 16, spacingMm: 150 }],
+      bottomDistBars: [{ diameterMm: 16, spacingMm: 150 }],
+      topMainBars: [{ diameterMm: 16, spacingMm: 150 }],
+      topDistBars: [{ diameterMm: 16, spacingMm: 150 }],
+      bottomMainDia: 16,
+      bottomMainSpacing: 150,
+      bottomDistDia: 16,
+      bottomDistSpacing: 150,
+      topMainDia: 16,
+      topMainSpacing: 150,
+      topDistDia: 16,
+      topDistSpacing: 150,
       startersEnabled: true,
       starterDia: 20,
       starterCount: 4,
@@ -169,9 +183,25 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 25, max: 100, step: 5, dec: 0, def: 50 },
-      { key: 'bottomMainDia', label: 'Mesh dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'bottomMainSpacing', label: 'Mesh spc', min: 75, max: 300, step: 25, dec: 0, def: 200 },
+      { key: 'bottomMainBars', label: 'Bot main', type: 'meshGroups', def: 0 },
+      { key: 'bottomDistBars', label: 'Bot dist.', type: 'meshGroups', def: 0 },
+      { key: 'topMainBars', label: 'Top main', type: 'meshGroups', def: 0 },
+      { key: 'topDistBars', label: 'Top dist.', type: 'meshGroups', def: 0 },
     ],
+    rebarDefaults: {
+      bottomMainBars: [{ diameterMm: 12, spacingMm: 200 }],
+      bottomDistBars: [{ diameterMm: 12, spacingMm: 200 }],
+      topMainBars: [{ diameterMm: 12, spacingMm: 200 }],
+      topDistBars: [{ diameterMm: 12, spacingMm: 200 }],
+      bottomMainDia: 12,
+      bottomMainSpacing: 200,
+      bottomDistDia: 12,
+      bottomDistSpacing: 200,
+      topMainDia: 12,
+      topMainSpacing: 200,
+      topDistDia: 12,
+      topDistSpacing: 200,
+    },
     outputCols: STRUCTURAL_OUTPUT,
   },
 
@@ -221,13 +251,21 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 25, max: 100, step: 5, dec: 0, def: 50 },
-      { key: 'bottomMainDia', label: 'Mesh dia', type: 'select', options: BAR_SIZES, def: 16 },
-      { key: 'bottomMainSpacing', label: 'Mesh spc', min: 75, max: 300, step: 25, dec: 0, def: 150 },
+      { key: 'bottomMainBars', label: 'Bot main', type: 'meshGroups', def: 0 },
+      { key: 'bottomDistBars', label: 'Bot dist.', type: 'meshGroups', def: 0 },
       { key: 'starterBarsPerPile', label: 'Bars/pile', type: 'int', min: 1, max: 20, step: 1, dec: 0, def: 4 },
       { key: 'starterDia', label: 'Starter dia', type: 'select', options: BAR_SIZES, def: 20 },
       { key: 'starterProjection', label: 'Proj. (m)', min: 0, max: 3, step: 0.05, dec: 2, def: 0.8 },
       { key: 'starterEmbedment', label: 'Embed. (m)', min: 0, max: 3, step: 0.05, dec: 2, def: 0.4 },
     ],
+    rebarDefaults: {
+      bottomMainBars: [{ diameterMm: 16, spacingMm: 150 }],
+      bottomDistBars: [{ diameterMm: 16, spacingMm: 150 }],
+      bottomMainDia: 16,
+      bottomMainSpacing: 150,
+      bottomDistDia: 16,
+      bottomDistSpacing: 150,
+    },
     outputCols: STRUCTURAL_OUTPUT,
   },
 
@@ -372,11 +410,15 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 20, max: 100, step: 5, dec: 0, def: 40 },
-      { key: 'longBarCount', label: 'Long. bars', type: 'int', min: 2, max: 60, step: 1, dec: 0, def: 8 },
-      { key: 'longBarDia', label: 'Long. dia', type: 'select', options: BAR_SIZES, def: 16 },
+      { key: 'longBars', label: 'Long. bars', type: 'barGroups', def: 0 },
       { key: 'tieDia', label: 'Tie dia', type: 'select', options: BAR_SIZES, def: 8 },
       { key: 'tieSpacing', label: 'Tie spc', min: 75, max: 400, step: 25, dec: 0, def: 200 },
     ],
+    rebarDefaults: {
+      longBars: [{ diameterMm: 16, barCount: 8 }],
+      longBarCount: 8,
+      longBarDia: 16,
+    },
     outputCols: STRUCTURAL_OUTPUT,
   },
 
@@ -434,13 +476,19 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 20, max: 100, step: 5, dec: 0, def: 40 },
-      { key: 'topBarCount', label: 'Top bars', type: 'int', min: 1, max: 30, step: 1, dec: 0, def: 2 },
-      { key: 'topBarDia', label: 'Top dia', type: 'select', options: BAR_SIZES, def: 16 },
-      { key: 'bottomBarCount', label: 'Bottom bars', type: 'int', min: 1, max: 30, step: 1, dec: 0, def: 3 },
-      { key: 'bottomBarDia', label: 'Bottom dia', type: 'select', options: BAR_SIZES, def: 20 },
+      { key: 'topBars', label: 'Top bars', type: 'barGroups', def: 0 },
+      { key: 'bottomBars', label: 'Bottom bars', type: 'barGroups', def: 0 },
       { key: 'linkDia', label: 'Link dia', type: 'select', options: BAR_SIZES, def: 8 },
       { key: 'linkSpacing', label: 'Link spc', min: 75, max: 400, step: 25, dec: 0, def: 200 },
     ],
+    rebarDefaults: {
+      topBars: [{ diameterMm: 16, barCount: 2 }],
+      bottomBars: [{ diameterMm: 20, barCount: 3 }],
+      topBarCount: 2,
+      topBarDia: 16,
+      bottomBarCount: 3,
+      bottomBarDia: 20,
+    },
     outputCols: STRUCTURAL_OUTPUT,
   },
 
@@ -495,12 +543,26 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 20, max: 100, step: 5, dec: 0, def: 50 },
-      { key: 'bottomMainDia', label: 'Main dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'bottomMainSpacing', label: 'Main spc', min: 75, max: 400, step: 25, dec: 0, def: 200 },
-      { key: 'bottomDistDia', label: 'Dist. dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'bottomDistSpacing', label: 'Dist. spc', min: 75, max: 400, step: 25, dec: 0, def: 200 },
+      { key: 'bottomMainBars', label: 'Main', type: 'meshGroups', def: 0 },
+      { key: 'bottomDistBars', label: 'Dist.', type: 'meshGroups', def: 0 },
+      { key: 'topMainBars', label: 'Top main', type: 'meshGroups', def: 0 },
+      { key: 'topDistBars', label: 'Top dist.', type: 'meshGroups', def: 0 },
       { key: 'ribBarsPerRib', label: 'Bars/rib', type: 'int', min: 1, max: 12, step: 1, dec: 0, def: 2 },
     ],
+    rebarDefaults: {
+      bottomMainBars: [{ diameterMm: 12, spacingMm: 200 }],
+      bottomDistBars: [{ diameterMm: 12, spacingMm: 200 }],
+      topMainBars: [{ diameterMm: 12, spacingMm: 200 }],
+      topDistBars: [{ diameterMm: 12, spacingMm: 200 }],
+      bottomMainDia: 12,
+      bottomMainSpacing: 200,
+      bottomDistDia: 12,
+      bottomDistSpacing: 200,
+      topMainDia: 12,
+      topMainSpacing: 200,
+      topDistDia: 12,
+      topDistSpacing: 200,
+    },
     outputCols: STRUCTURAL_OUTPUT,
   },
 
@@ -692,12 +754,25 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 25, max: 100, step: 5, dec: 0, def: 50 },
-      { key: 'mainDia', label: 'Main dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'mainSpacing', label: 'Main spc', min: 75, max: 300, step: 25, dec: 0, def: 150 },
+      { key: 'mainBars', label: 'Trans. main', type: 'meshGroups', def: 0 },
+      { key: 'distBars', label: 'Long. dist.', type: 'meshGroups', def: 0 },
+      { key: 'topMeshEnabled', label: 'Top mesh', type: 'bool', def: false },
+      { key: 'topMainBars', label: 'Top trans.', type: 'meshGroups', def: 0 },
+      { key: 'topDistBars', label: 'Top long.', type: 'meshGroups', def: 0 },
     ],
     rebarDefaults: {
+      mainBars: [{ diameterMm: 12, spacingMm: 150 }],
+      distBars: [{ diameterMm: 12, spacingMm: 250 }],
+      topMainBars: [{ diameterMm: 12, spacingMm: 150 }],
+      topDistBars: [{ diameterMm: 12, spacingMm: 250 }],
+      mainDia: 12,
+      mainSpacing: 150,
+      distDia: 12,
       distSpacing: 250,
-      topMeshEnabled: false,
+      topMainDia: 12,
+      topMainSpacing: 150,
+      topDistDia: 12,
+      topDistSpacing: 250,
       startersEnabled: false,
       starterDia: 12,
       starterCount: 10,
@@ -738,12 +813,17 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 20, max: 75, step: 5, dec: 0, def: 40 },
-      { key: 'vertDia', label: 'Vert dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'vertSpacing', label: 'Vert spc', min: 75, max: 300, step: 25, dec: 0, def: 200 },
+      { key: 'vertBars', label: 'Vertical', type: 'meshGroups', def: 0 },
+      { key: 'horizBars', label: 'Horizontal', type: 'meshGroups', def: 0 },
+      { key: 'bothFaces', label: 'Both faces', type: 'bool', def: true },
     ],
     rebarDefaults: {
+      vertBars: [{ diameterMm: 12, spacingMm: 200 }],
+      horizBars: [{ diameterMm: 12, spacingMm: 250 }],
+      vertDia: 12,
+      vertSpacing: 200,
+      horizDia: 12,
       horizSpacing: 250,
-      bothFaces: true,
       startersEnabled: false,
       starterDia: 12,
       starterCount: 20,
@@ -1076,13 +1156,19 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
     },
     rebarFields: [
       { key: 'cover', label: 'Cover (mm)', min: 20, max: 75, step: 5, dec: 0, def: 25 },
-      { key: 'topBarCount', label: 'Top n', type: 'int', min: 1, max: 8, step: 1, dec: 0, def: 2 },
-      { key: 'topBarDia', label: 'Top dia', type: 'select', options: BAR_SIZES, def: 12 },
-      { key: 'bottomBarCount', label: 'Bot n', type: 'int', min: 1, max: 8, step: 1, dec: 0, def: 2 },
-      { key: 'bottomBarDia', label: 'Bot dia', type: 'select', options: BAR_SIZES, def: 12 },
+      { key: 'topBars', label: 'Top bars', type: 'barGroups', def: 0 },
+      { key: 'bottomBars', label: 'Bottom bars', type: 'barGroups', def: 0 },
       { key: 'linkDia', label: 'Link dia', type: 'select', options: BAR_SIZES, def: 8 },
       { key: 'linkSpacing', label: 'Link spc', min: 75, max: 300, step: 25, dec: 0, def: 200 },
     ],
+    rebarDefaults: {
+      topBars: [{ diameterMm: 12, barCount: 2 }],
+      bottomBars: [{ diameterMm: 12, barCount: 2 }],
+      topBarCount: 2,
+      topBarDia: 12,
+      bottomBarCount: 2,
+      bottomBarDia: 12,
+    },
     outputCols: [
       { key: 'len', label: 'Len (m)', unit: 'm', dec: 2, resultKey: 'totalLengthM' },
       ...STRUCTURAL_OUTPUT,
@@ -1435,24 +1521,11 @@ export function buildDefaultInstancePayload(
 
   const reinforcement: Record<string, unknown> = { ...(schema.rebarDefaults || {}) }
   schema.rebarFields.forEach((f) => {
+    if (f.type === 'barGroups' || f.type === 'meshGroups') return
     reinforcement[f.key] = f.def
   })
 
-  // Mirror prototype: sync dist dia/spacing from main where applicable
-  if (elementKey === 'PAD_FOOTING') {
-    reinforcement.bottomDistDia = reinforcement.bottomMainDia
-    reinforcement.bottomDistSpacing = reinforcement.bottomMainSpacing
-  }
-  if (elementKey === 'RAFT' || elementKey === 'PILE_CAP') {
-    reinforcement.bottomDistDia = reinforcement.bottomMainDia
-    reinforcement.bottomDistSpacing = reinforcement.bottomMainSpacing
-  }
-  if (elementKey === 'STRIP_FOOTING') {
-    reinforcement.distDia = reinforcement.mainDia
-  }
-  if (elementKey === 'WALLS') {
-    reinforcement.horizDia = reinforcement.vertDia
-  }
+  // No longer mirror main→dist; defaults already set independent values.
 
   if (elementKey === 'STONE_STRIP') {
     delete reinforcement.hasBlinding

@@ -5,6 +5,11 @@ import { addHeightDim, addPlanDims } from './dimensions'
 import { makePrismMesh, makeRebarBar } from './meshes'
 import { modelViewOptions } from './viewOptions'
 
+export type LongBarGroup = {
+  diameterMm: number
+  barCount: number
+}
+
 export type ColumnInstance = {
   shape: 'RECTANGULAR' | 'CIRCULAR' | 'L_SHAPED' | 'T_SHAPED' | 'CRUCIFORM' | string
   clearHeight: number
@@ -18,10 +23,21 @@ export type ColumnInstance = {
   webThickness?: number
   armThickness?: number
   cover: number
-  longBarCount: number
-  longBarDia: number
+  longBars?: LongBarGroup[]
+  longBarCount?: number
+  longBarDia?: number
   tieDia: number
   tieSpacing: number
+}
+
+function resolveLongBars(f: ColumnInstance): LongBarGroup[] {
+  if (Array.isArray(f.longBars) && f.longBars.length > 0) {
+    return f.longBars.filter((g) => g.barCount > 0 && g.diameterMm > 0)
+  }
+  const dia = f.longBarDia || 0
+  const count = f.longBarCount || 0
+  if (dia > 0 && count > 0) return [{ diameterMm: dia, barCount: count }]
+  return []
 }
 
 function planPoints(f: ColumnInstance): [number, number][] {
@@ -173,31 +189,38 @@ export function buildColumnModel(f: ColumnInstance): THREE.Group {
         : f.depth || 0
 
   if (modelViewOptions.showRebar) {
+    const longBars = resolveLongBars(f)
+    const totalLongCount = longBars.reduce((s, g) => s + g.barCount, 0)
     let longitudinalPositions: [number, number][]
     let tiePoints: [number, number][] = []
     if (circular) {
       const radius = Math.max(0.02, (f.diameter || 0) / 2 - cover)
-      longitudinalPositions = Array.from({ length: f.longBarCount }, (_, i) => {
-        const angle = (i * Math.PI * 2) / Math.max(1, f.longBarCount)
+      longitudinalPositions = Array.from({ length: totalLongCount }, (_, i) => {
+        const angle = (i * Math.PI * 2) / Math.max(1, totalLongCount)
         return [Math.cos(angle) * radius, Math.sin(angle) * radius]
       })
     } else {
       tiePoints = inset(planPoints(f), cover)
-      longitudinalPositions = samplePerimeter(tiePoints, f.longBarCount)
+      longitudinalPositions = samplePerimeter(tiePoints, totalLongCount)
     }
 
-    longitudinalPositions.forEach(([x, z]) => {
-      const bar = makeRebarBar(
-        x,
-        cover,
-        z,
-        x,
-        f.clearHeight - cover,
-        z,
-        f.longBarDia,
-      )
-      if (bar) group.add(bar)
-    })
+    let posIndex = 0
+    for (const barGroup of longBars) {
+      for (let b = 0; b < barGroup.barCount; b++) {
+        const [x, z] = longitudinalPositions[posIndex] || longitudinalPositions[0]
+        posIndex += 1
+        const bar = makeRebarBar(
+          x,
+          cover,
+          z,
+          x,
+          f.clearHeight - cover,
+          z,
+          barGroup.diameterMm,
+        )
+        if (bar) group.add(bar)
+      }
+    }
 
     const tieCount = barCountForSpan(f.clearHeight, f.tieSpacing)
     for (let i = 0; i < tieCount; i++) {

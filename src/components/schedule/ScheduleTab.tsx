@@ -29,6 +29,20 @@ import { DuplicateFloorModal } from '../modals/DuplicateFloorModal'
 import { OpeningsTableModal } from '../modals/OpeningsTableModal'
 import { StairSegmentsModal } from '../modals/StairSegmentsModal'
 import {
+  BAR_GROUP_LEGACY,
+  BarGroupsScheduleCell,
+  syncLegacyBarGroups,
+  type BarGroup,
+} from './LongBarsScheduleCell'
+import {
+  MESH_GROUP_LEGACY,
+  MeshBarsScheduleCell,
+  syncLegacyMeshGroups,
+  type MeshBarGroup,
+} from './MeshBarsScheduleCell'
+import { RebarInactiveCell } from './RebarGroupsEditorShell'
+import { rebarFieldInactiveReason } from './rebarFieldVisibility'
+import {
   GridPlacementModal,
   type PointPlacementResult,
   type SpanPlacementResult,
@@ -106,12 +120,25 @@ function ScheduleInput({
   disabled,
 }: {
   field: FieldDef
-  value: string | number
-  onChange: (v: string | number) => void
+  value: string | number | boolean
+  onChange: (v: string | number | boolean) => void
   disabled?: boolean
 }) {
   const cls =
     field.type === 'text' ? `${fieldCls} min-w-[8rem] font-sans` : fieldCls
+  if (field.type === 'bool') {
+    return (
+      <select
+        className={cls}
+        value={value === true || value === 'true' ? 'true' : 'false'}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value === 'true')}
+      >
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    )
+  }
   if (field.type === 'select' && field.options) {
     return (
       <select
@@ -694,13 +721,69 @@ function InstanceRow({
 
   function setRebar(key: string, value: unknown) {
     const reinforcement = { ...(local.reinforcement || {}), [key]: value }
-    // Keep dist in sync when main changes (pad/strip/wall)
-    if (key === 'bottomMainDia') reinforcement.bottomDistDia = value
-    if (key === 'bottomMainSpacing') reinforcement.bottomDistSpacing = value
-    if (key === 'mainDia') reinforcement.distDia = value
-    if (key === 'vertDia') reinforcement.horizDia = value
     setLocal((l) => ({ ...l, reinforcement }))
     onPatch({ reinforcement })
+  }
+
+  function setBarGroups(arrayKey: string, groups: BarGroup[]) {
+    const meta = BAR_GROUP_LEGACY[arrayKey]
+    if (!meta) return
+    const synced = syncLegacyBarGroups(groups, {
+      arrayKey: meta.arrayKey,
+      countKey: meta.countKey,
+      diaKey: meta.diaKey,
+      fallbackDia: meta.fallbackDia,
+    })
+    const reinforcement = { ...(local.reinforcement || {}), ...synced }
+    setLocal((l) => ({ ...l, reinforcement }))
+    onPatch({ reinforcement })
+  }
+
+  function resolveBarGroupsValue(arrayKey: string): BarGroup[] {
+    const meta = BAR_GROUP_LEGACY[arrayKey]
+    const raw = local.reinforcement?.[arrayKey]
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((g: { diameterMm?: number; barCount?: number }) => ({
+        diameterMm: Number(g.diameterMm) || 0,
+        barCount: Number(g.barCount) || 0,
+      }))
+    }
+    if (!meta) return []
+    const dia =
+      Number(local.reinforcement?.[meta.diaKey]) || meta.fallbackDia
+    const count = Number(local.reinforcement?.[meta.countKey]) || 0
+    if (count > 0) return [{ diameterMm: dia, barCount: count }]
+    return [{ diameterMm: meta.fallbackDia, barCount: arrayKey === 'longBars' ? 8 : 2 }]
+  }
+
+  function setMeshGroups(arrayKey: string, groups: MeshBarGroup[]) {
+    const meta = MESH_GROUP_LEGACY[arrayKey]
+    if (!meta) return
+    const synced = syncLegacyMeshGroups(groups, {
+      arrayKey: meta.arrayKey,
+      diaKey: meta.diaKey,
+      spcKey: meta.spcKey,
+      fallbackDia: meta.fallbackDia,
+      fallbackSpc: meta.fallbackSpc,
+    })
+    const reinforcement = { ...(local.reinforcement || {}), ...synced }
+    setLocal((l) => ({ ...l, reinforcement }))
+    onPatch({ reinforcement })
+  }
+
+  function resolveMeshGroupsValue(arrayKey: string): MeshBarGroup[] {
+    const meta = MESH_GROUP_LEGACY[arrayKey]
+    const raw = local.reinforcement?.[arrayKey]
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((g: { diameterMm?: number; spacingMm?: number }) => ({
+        diameterMm: Number(g.diameterMm) || 0,
+        spacingMm: Number(g.spacingMm) || 0,
+      }))
+    }
+    if (!meta) return []
+    const dia = Number(local.reinforcement?.[meta.diaKey]) || meta.fallbackDia
+    const spc = Number(local.reinforcement?.[meta.spcKey]) || meta.fallbackSpc
+    return [{ diameterMm: dia, spacingMm: spc }]
   }
 
   function changeShape(shape: string) {
@@ -1052,15 +1135,46 @@ function InstanceRow({
           </DataTable.Cell>
         )
       })}
-      {schema.rebarFields.map((field) => (
-        <DataTable.Cell key={field.key}>
-          <ScheduleInput
-            field={field}
-            value={(local.reinforcement?.[field.key] as number) ?? field.def}
-            onChange={(v) => setRebar(field.key, v)}
-          />
-        </DataTable.Cell>
-      ))}
+      {schema.rebarFields.map((field) => {
+        const inactiveReason = rebarFieldInactiveReason(
+          local.elementKey,
+          field.key,
+          local.shape,
+          local.reinforcement as Record<string, unknown> | null | undefined,
+        )
+        return (
+          <DataTable.Cell key={field.key}>
+            {inactiveReason ? (
+              <RebarInactiveCell reason={inactiveReason} />
+            ) : field.type === 'barGroups' ? (
+              <BarGroupsScheduleCell
+                title={BAR_GROUP_LEGACY[field.key]?.title || field.label}
+                value={resolveBarGroupsValue(field.key)}
+                onChange={(groups) => setBarGroups(field.key, groups)}
+                defaultDia={BAR_GROUP_LEGACY[field.key]?.fallbackDia ?? 16}
+                defaultCount={field.key === 'longBars' ? 8 : 2}
+              />
+            ) : field.type === 'meshGroups' ? (
+              <MeshBarsScheduleCell
+                title={MESH_GROUP_LEGACY[field.key]?.title || field.label}
+                value={resolveMeshGroupsValue(field.key)}
+                onChange={(groups) => setMeshGroups(field.key, groups)}
+                defaultDia={MESH_GROUP_LEGACY[field.key]?.fallbackDia ?? 16}
+                defaultSpc={MESH_GROUP_LEGACY[field.key]?.fallbackSpc ?? 150}
+              />
+            ) : (
+              <ScheduleInput
+                field={field}
+                value={
+                  (local.reinforcement?.[field.key] as string | number | boolean) ??
+                  field.def
+                }
+                onChange={(v) => setRebar(field.key, v)}
+              />
+            )}
+          </DataTable.Cell>
+        )
+      })}
       {schema.outputCols.map((c) => {
         const raw = result?.[c.resultKey]
         const shown =

@@ -22,12 +22,13 @@ type AuthContextValue = {
     needsVerification: true
     email: string
     message: string
+    mailSent?: boolean
   }>
   loginWithGoogle: (credential: string) => Promise<void>
   verifyEmail: (token: string) => Promise<void>
   resetPassword: (token: string, password: string) => Promise<void>
-  forgotPassword: (email: string) => Promise<string>
-  resendVerification: (email: string) => Promise<string>
+  forgotPassword: (email: string) => Promise<{ message: string; mailSent?: boolean }>
+  resendVerification: (email: string) => Promise<{ message: string; mailSent?: boolean }>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -90,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         needsVerification: true
         email: string
         message: string
+        mailSent?: boolean
       }>('/api/auth/signup', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
@@ -132,19 +134,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const forgotPassword = useCallback(async (email: string) => {
-    const data = await api<{ message: string }>('/api/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })
-    return data.message
+    const data = await api<{ message: string; mailSent?: boolean }>(
+      '/api/auth/forgot-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      },
+    )
+    return data
   }, [])
 
   const resendVerification = useCallback(async (email: string) => {
-    const data = await api<{ message: string }>('/api/auth/resend-verification', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })
-    return data.message
+    const data = await api<{ message: string; mailSent?: boolean }>(
+      '/api/auth/resend-verification',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      },
+    )
+    return data
   }, [])
 
   const logout = useCallback(async () => {

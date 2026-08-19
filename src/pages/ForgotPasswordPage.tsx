@@ -18,8 +18,12 @@ export default function ForgotPasswordPage() {
     setMessage('')
     setSubmitting(true)
     try {
-      const msg = await forgotPassword(email)
-      setMessage(msg)
+      const result = await forgotPassword(email)
+      setMessage(
+        result.mailSent === false
+          ? `${result.message} If nothing arrives, check the backend console for the reset link.`
+          : result.message,
+      )
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Request failed')
     } finally {

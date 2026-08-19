@@ -68,8 +68,12 @@ export default function LoginPage() {
     setError('')
     setInfo('')
     try {
-      const message = await resendVerification(target)
-      setInfo(message)
+      const result = await resendVerification(target)
+      setInfo(
+        result.mailSent === false
+          ? `${result.message} (If nothing arrives, check the backend console for the link.)`
+          : result.message,
+      )
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not resend verification')
     }

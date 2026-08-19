@@ -15,6 +15,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [pendingEmail, setPendingEmail] = useState('')
+  const [mailHint, setMailHint] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const onGoogle = useCallback(
@@ -52,6 +53,9 @@ export default function SignupPage() {
             We sent a verification link to <span className="text-ink">{pendingEmail}</span>. Open
             it to activate your account, then sign in.
           </p>
+          {mailHint && (
+            <p className="mt-3 text-sm text-danger leading-relaxed">{mailHint}</p>
+          )}
           <p className="mt-4 text-sm text-steel text-center">
             <Link to="/login" className="text-chalk hover:underline">
               Back to sign in
@@ -69,6 +73,12 @@ export default function SignupPage() {
     try {
       const result = await signup(name, email, password)
       setPendingEmail(result.email)
+      setMailHint(
+        result.mailSent === false
+          ? result.message ||
+              'Email could not be sent. Check the backend console for the verification link, or use Resend on sign-in.'
+          : '',
+      )
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Signup failed')
     } finally {
