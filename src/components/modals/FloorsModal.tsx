@@ -43,46 +43,96 @@ export function FloorsModal({
   }
 
   return (
-    <Modal
-      open={open}
-      title="Floors"
-      onClose={() => {
-        void flush().finally(onClose)
-      }}
-      wide
-    >
-      <p className="text-xs text-steel mb-3">
-        Changes autosave. Deleting a floor removes all element instances on that floor.
-      </p>
-      <div className="overflow-x-auto border border-steel-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-steel text-xs border-b border-steel-border">
-              <th className="p-2">ID</th>
-              <th className="p-2">Label</th>
-              <th className="p-2">Elev.</th>
-              <th className="p-2">Height</th>
-              <th className="p-2 w-40" />
-            </tr>
-          </thead>
-          <tbody>
-            {floors.map((f) => (
-              <FloorRow
-                key={f.id}
-                floor={f}
-                onPatch={(body) => patchFloor(f.id, body)}
-                onDuplicate={() => setDuplicateSource(f.floorId)}
-                onDelete={() => {
-                  if (confirm(`Delete floor ${f.floorId}? Instances on it will be removed.`)) {
-                    remove.mutate(f.id)
-                  }
-                }}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <>
+      <Modal
+        open={open}
+        title="Floors"
+        onClose={() => {
+          void flush().finally(onClose)
+        }}
+        wide
+        closeOnEscape={!duplicateSource}
+      >
+        <p className="text-xs text-steel mb-3">
+          Changes autosave. Deleting a floor removes all element instances on that floor.
+        </p>
+        <div className="overflow-x-auto border border-steel-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-steel text-xs border-b border-steel-border">
+                <th className="p-2">ID</th>
+                <th className="p-2">Label</th>
+                <th className="p-2">Elev.</th>
+                <th className="p-2">Height</th>
+                <th className="p-2 w-40" />
+              </tr>
+            </thead>
+            <tbody>
+              {floors.map((f) => (
+                <FloorRow
+                  key={f.id}
+                  floor={f}
+                  onPatch={(body) => patchFloor(f.id, body)}
+                  onDuplicate={() => setDuplicateSource(f.floorId)}
+                  onDelete={() => {
+                    if (confirm(`Delete floor ${f.floorId}? Instances on it will be removed.`)) {
+                      remove.mutate(f.id)
+                    }
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
 
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+          <Field label="New ID">
+            <input
+              className={inputClass}
+              value={draft.floorId}
+              onChange={(e) => setDraft((d) => ({ ...d, floorId: e.target.value }))}
+            />
+          </Field>
+          <Field label="Label">
+            <input
+              className={inputClass}
+              value={draft.label}
+              onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
+            />
+          </Field>
+          <Field label="Elevation">
+            <input
+              type="number"
+              step={0.1}
+              className={inputClass}
+              value={draft.elevation}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, elevation: Number(e.target.value) }))
+              }
+            />
+          </Field>
+          <Field label="Height">
+            <input
+              type="number"
+              step={0.1}
+              className={inputClass}
+              value={draft.height}
+              onChange={(e) => setDraft((d) => ({ ...d, height: Number(e.target.value) }))}
+            />
+          </Field>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <PrimaryButton
+            disabled={!draft.floorId.trim() || !draft.label.trim() || add.isPending}
+            onClick={() => add.mutate()}
+            className="!text-sm !py-1.5 !px-4"
+          >
+            Add floor
+          </PrimaryButton>
+        </div>
+      </Modal>
+
+      {/* Sibling (not nested) so the dialog is not clipped by Floors overflow. */}
       <DuplicateFloorModal
         open={!!duplicateSource}
         onClose={() => setDuplicateSource(null)}
@@ -91,51 +141,7 @@ export function FloorsModal({
         sourceFloorId={duplicateSource || undefined}
         title="Duplicate floor"
       />
-
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
-        <Field label="New ID">
-          <input
-            className={inputClass}
-            value={draft.floorId}
-            onChange={(e) => setDraft((d) => ({ ...d, floorId: e.target.value }))}
-          />
-        </Field>
-        <Field label="Label">
-          <input
-            className={inputClass}
-            value={draft.label}
-            onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-          />
-        </Field>
-        <Field label="Elevation">
-          <input
-            type="number"
-            step={0.1}
-            className={inputClass}
-            value={draft.elevation}
-            onChange={(e) => setDraft((d) => ({ ...d, elevation: Number(e.target.value) }))}
-          />
-        </Field>
-        <Field label="Height">
-          <input
-            type="number"
-            step={0.1}
-            className={inputClass}
-            value={draft.height}
-            onChange={(e) => setDraft((d) => ({ ...d, height: Number(e.target.value) }))}
-          />
-        </Field>
-      </div>
-      <div className="mt-3 flex justify-end">
-        <PrimaryButton
-          disabled={!draft.floorId.trim() || !draft.label.trim() || add.isPending}
-          onClick={() => add.mutate()}
-          className="!text-sm !py-1.5 !px-4"
-        >
-          Add floor
-        </PrimaryButton>
-      </div>
-    </Modal>
+    </>
   )
 }
 

@@ -43,7 +43,7 @@ type AutosaveContextValue = {
   /** Flush pending PATCHes now (manual Save). */
   flush: () => Promise<void>
   /** Run an immediate write (create/delete) with the same status indicator. */
-  runImmediate: (fn: () => Promise<unknown>) => Promise<void>
+  runImmediate: <T>(fn: () => Promise<T>) => Promise<T>
 }
 
 const AutosaveContext = createContext<AutosaveContextValue | null>(null)
@@ -199,7 +199,7 @@ export function AutosaveProvider({ children }: { children: ReactNode }) {
   )
 
   const runImmediate = useCallback(
-    async (fn: () => Promise<unknown>) => {
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
       if (timer.current) {
         clearTimeout(timer.current)
         timer.current = null
@@ -207,8 +207,9 @@ export function AutosaveProvider({ children }: { children: ReactNode }) {
       await flush()
       setStatus('saving')
       try {
-        await fn()
+        const result = await fn()
         flashSaved()
+        return result
       } catch (err) {
         setStatus('idle')
         throw err

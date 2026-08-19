@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export function Modal({
   open,
@@ -7,6 +8,9 @@ export function Modal({
   children,
   wide,
   size = 'md',
+  closeOnEscape = true,
+  /** Stack above another open modal (e.g. Duplicate inside Floors). */
+  layer = 0,
 }: {
   open: boolean
   title: string
@@ -15,6 +19,8 @@ export function Modal({
   wide?: boolean
   /** Prefer `size` over `wide`. `wide` maps to `lg` for older call sites. */
   size?: 'md' | 'lg' | 'xl'
+  closeOnEscape?: boolean
+  layer?: number
 }) {
   const resolvedSize = wide && size === 'md' ? 'lg' : size
   const widthCls =
@@ -23,20 +29,22 @@ export function Modal({
       : resolvedSize === 'lg'
         ? 'w-full max-w-2xl'
         : 'w-full max-w-lg'
+  const zCls = layer > 0 ? 'z-[60]' : 'z-50'
+
   useEffect(() => {
-    if (!open) return
+    if (!open || !closeOnEscape) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, closeOnEscape])
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/75"
+      className={`fixed inset-0 ${zCls} flex items-center justify-center p-4 bg-bg/75`}
       onClick={onClose}
     >
       <div
@@ -59,7 +67,8 @@ export function Modal({
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

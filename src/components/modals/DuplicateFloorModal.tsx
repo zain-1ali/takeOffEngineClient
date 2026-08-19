@@ -55,17 +55,24 @@ export function DuplicateFloorModal({
     setError(null)
     setTargetMode('new')
     setExistingFloorId('')
-    const seed =
+    const taken = new Set(floors.map((f) => f.floorId))
+    const base =
       sourceFloorId && !selectedMode
         ? `${sourceFloorId}-COPY`
         : `L${String(floors.length + 1).padStart(2, '0')}`
+    let seed = base
+    let n = 2
+    while (taken.has(seed)) {
+      seed = `${base}-${n}`
+      n += 1
+    }
     setDraft({
       floorId: seed,
       label: sourceFloorId && !selectedMode ? `${sourceFloorId} copy` : 'New Level',
       elevation: 0,
       height: 3,
     })
-  }, [open, sourceFloorId, selectedMode, floors.length])
+  }, [open, sourceFloorId, selectedMode, floors])
 
   useEffect(() => {
     if (!open || selectedMode) return
@@ -89,21 +96,17 @@ export function DuplicateFloorModal({
   }, [open, selectedMode, floors, projectId, sourceFloorId])
 
   const mut = useMutation({
-    mutationFn: async () => {
-      let result: Awaited<ReturnType<typeof duplicateFloor>> | undefined
-      await runImmediate(async () => {
-        result = await duplicateFloor(projectId, {
+    mutationFn: () =>
+      runImmediate(() =>
+        duplicateFloor(projectId, {
           ...(selectedMode
             ? { instanceIds }
             : { sourceFloorId: sourceFloorId! }),
           ...(targetMode === 'new'
             ? { newFloor: draft }
             : { targetFloorId: existingFloorId }),
-        })
-      })
-      if (!result) throw new Error('Duplication failed')
-      return result
-    },
+        }),
+      ),
     onSuccess: async (res) => {
       await qc.invalidateQueries({ queryKey: ['project', projectId] })
       await qc.invalidateQueries({ queryKey: ['instances', projectId] })
@@ -131,6 +134,7 @@ export function DuplicateFloorModal({
       open={open}
       title={title || (selectedMode ? 'Duplicate selected to floor' : 'Duplicate floor')}
       onClose={onClose}
+      layer={1}
     >
       <p className="text-xs text-steel mb-3">
         Copies shape, geometry, grade/spec, reinforcement, and grid placement refs.
