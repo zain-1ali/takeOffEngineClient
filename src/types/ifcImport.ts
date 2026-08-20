@@ -1,7 +1,42 @@
 export type IfcSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
-export type IfcImportJobStatus = 'SUCCEEDED' | 'FAILED' | 'COMMITTED'
+export type IfcImportJobStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'COMMITTED'
 export type IfcWallConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+export type IfcSuggestionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+export type IfcSuggestionEntityType = 'IfcWall' | 'IfcSlab'
 
+export type IfcMappedInstanceData = {
+  elementKey: 'WALLS' | 'SLABS' | null
+  shape: string | null
+  mark: string | null
+  geometry: Record<string, number> | null
+}
+
+/** First-class review row (IfcSuggestion collection). */
+export type IfcSuggestion = {
+  id: string
+  projectId: string
+  jobId: string
+  sourceGlobalId: string
+  expressId: number
+  entityType: IfcSuggestionEntityType
+  name: string | null
+  mappedInstanceData: IfcMappedInstanceData | null
+  confidence: IfcSuggestionConfidence
+  confidenceNotes: string[]
+  needsManualModeling: boolean
+  skipReason: string | null
+  status: IfcSuggestionStatus
+  acceptedInstanceId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Legacy embedded wall row on IfcImportJob (kept for older clients). */
 export type IfcWallSuggestion = {
   id: string
   sourceGlobalId: string

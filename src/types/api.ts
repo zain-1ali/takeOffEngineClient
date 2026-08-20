@@ -155,6 +155,8 @@ export type Instance = {
   spec: string | null
   /** UniFormat location (Walls / Slabs / Doors / Wall finishes). */
   location: string | null
+  source?: 'MANUAL' | 'IFC_IMPORT' | null
+  sourceGlobalId?: string | null
   createdAt?: string
   updatedAt?: string
 }

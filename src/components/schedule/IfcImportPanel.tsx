@@ -1,10 +1,16 @@
-import { useRef, useState } from 'react'
-import { commitIfcImport, startIfcImport } from '../../api/projectsApi'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  acceptIfcSuggestion,
+  getIfcImportJob,
+  listIfcSuggestions,
+  rejectIfcSuggestion,
+  startIfcImport,
+} from '../../api/projectsApi'
 import { ApiError } from '../../lib/api'
 import type {
   IfcImportJob,
-  IfcSuggestionStatus,
-  IfcWallSuggestion,
+  IfcMappedInstanceData,
+  IfcSuggestion,
 } from '../../types/ifcImport'
 import { Modal } from '../modals/Modal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
@@ -12,12 +18,82 @@ import { DataTable, GhostButton, PrimaryButton } from '../ui'
 const inputCls =
   'border border-steel-border bg-bg px-1.5 py-1 text-xs text-ink outline-none'
 
-function geoNum(
-  row: IfcWallSuggestion,
-  key: 'length' | 'thickness' | 'height' | 'radius' | 'arcAngleDeg',
+const IFC_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+const CONF_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const
+
+function geoVal(
+  data: IfcMappedInstanceData | null | undefined,
+  key: string,
 ): string {
-  const v = row.geometry?.[key]
+  const v = data?.geometry?.[key]
   return v == null ? '' : String(v)
+}
+
+function wallMissingFields(row: IfcSuggestion): string[] {
+  if (row.entityType !== 'IfcWall') return ['Not a wall']
+  const data = row.mappedInstanceData
+  const missing: string[] = []
+  const shape = data?.shape
+  const g = data?.geometry
+  if (shape !== 'LINEAR' && shape !== 'CURVED') missing.push('Shape')
+  if (!(Number(g?.thickness) > 0)) missing.push('Thickness (T)')
+  if (!(Number(g?.height) > 0)) missing.push('Height (H)')
+  if (shape === 'LINEAR' && !(Number(g?.length) > 0)) missing.push('Length (L)')
+  if (shape === 'CURVED') {
+    if (!(Number(g?.radius) > 0)) missing.push('Radius')
+    if (!(Number(g?.arcAngleDeg) > 0)) missing.push('Arc angle')
+  }
+  return missing
+}
+
+/** Default LINEAR + seed thickness from name like "Wall 50 cm" when mapper left gaps. */
+function normalizeSuggestionRow(s: IfcSuggestion): IfcSuggestion {
+  if (s.entityType !== 'IfcWall' || s.status !== 'PENDING') return s
+  const prev = s.mappedInstanceData || {
+    elementKey: 'WALLS' as const,
+    shape: null,
+    mark: null,
+    geometry: null,
+  }
+  const geometry: Record<string, number> = { ...(prev.geometry || {}) }
+  if (!(Number(geometry.height) > 0) && geometry.height != null) {
+    /* keep */
+  }
+  if (!(Number(geometry.thickness) > 0)) {
+    const m = /(\d+(?:\.\d+)?)\s*cm/i.exec(s.name || '')
+    if (m) geometry.thickness = Number(m[1]) / 100
+  }
+  const shape = prev.shape === 'LINEAR' || prev.shape === 'CURVED' ? prev.shape : 'LINEAR'
+  return {
+    ...s,
+    mappedInstanceData: {
+      elementKey: prev.elementKey || 'WALLS',
+      shape,
+      mark: prev.mark,
+      geometry: Object.keys(geometry).length ? geometry : prev.geometry,
+    },
+  }
+}
+
+function sortSuggestions(rows: IfcSuggestion[]): IfcSuggestion[] {
+  return [...rows].sort((a, b) => {
+    if (a.entityType !== b.entityType) {
+      return a.entityType.localeCompare(b.entityType)
+    }
+    const rd = CONF_ORDER[a.confidence] - CONF_ORDER[b.confidence]
+    if (rd !== 0) return rd
+    if (a.needsManualModeling !== b.needsManualModeling) {
+      return a.needsManualModeling ? 1 : -1
+    }
+    return a.expressId - b.expressId
+  })
+}
+
+function groupByType(rows: IfcSuggestion[]) {
+  const walls = rows.filter((r) => r.entityType === 'IfcWall')
+  const slabs = rows.filter((r) => r.entityType === 'IfcSlab')
+  return { walls, slabs }
 }
 
 export function IfcImportPanel({
@@ -33,9 +109,9 @@ export function IfcImportPanel({
   const [open, setOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [job, setJob] = useState<IfcImportJob | null>(null)
-  const [rows, setRows] = useState<IfcWallSuggestion[]>([])
+  const [rows, setRows] = useState<IfcSuggestion[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [committing, setCommitting] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   function close() {
     setOpen(false)
@@ -43,93 +119,388 @@ export function IfcImportPanel({
     setRows([])
     setError(null)
     setUploading(false)
-    setCommitting(false)
+    setBusyId(null)
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function loadSuggestions(jobId: string) {
+    const { suggestions } = await listIfcSuggestions(projectId, jobId)
+    setRows(sortSuggestions(suggestions.map(normalizeSuggestionRow)))
   }
 
   async function onPick(file: File | undefined) {
     if (!file) return
     setOpen(true)
-    setUploading(true)
     setError(null)
     setJob(null)
     setRows([])
+
+    if (file.size > IFC_MAX_UPLOAD_BYTES) {
+      setError('File too large (max 200 MB)')
+      return
+    }
+
+    setUploading(true)
     try {
       const { job: created } = await startIfcImport(projectId, file)
       setJob(created)
-      setRows(created.suggestions || [])
+      if (created.status === 'SUCCEEDED') {
+        await loadSuggestions(created.id)
+      }
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : 'Failed to parse IFC file',
+        err instanceof ApiError ? err.message : 'Failed to upload IFC file',
       )
     } finally {
       setUploading(false)
     }
   }
 
-  function patchRow(id: string, patch: Partial<IfcWallSuggestion>) {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
-  }
+  useEffect(() => {
+    if (!job) return
+    if (job.status !== 'QUEUED' && job.status !== 'RUNNING') return
 
-  function patchGeometry(
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const { job: next } = await getIfcImportJob(projectId, job.id)
+        if (cancelled) return
+        setJob(next)
+        if (next.status === 'SUCCEEDED') {
+          await loadSuggestions(next.id)
+        }
+        if (next.status === 'FAILED') {
+          setError(next.error || 'IFC parse failed')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof ApiError
+              ? err.message
+              : 'Failed to poll import job',
+          )
+        }
+      }
+    }
+
+    const id = window.setInterval(() => {
+      void tick()
+    }, 1500)
+    void tick()
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [job?.id, job?.status, projectId])
+
+  function patchLocal(
     id: string,
-    key: 'length' | 'thickness' | 'height',
-    raw: string,
+    patch: Partial<IfcMappedInstanceData>,
   ) {
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r
-        const n = parseFloat(raw)
-        const base = r.geometry || { thickness: 0, height: 0 }
+        const base = r.mappedInstanceData || {
+          elementKey: r.entityType === 'IfcWall' ? 'WALLS' : 'SLABS',
+          shape: null,
+          mark: null,
+          geometry: null,
+        }
         return {
           ...r,
-          geometry: {
-            ...base,
-            [key]: Number.isFinite(n) ? n : base[key] || 0,
+          mappedInstanceData: {
+            elementKey:
+              patch.elementKey !== undefined
+                ? patch.elementKey
+                : base.elementKey,
+            shape: patch.shape !== undefined ? patch.shape : base.shape,
+            mark: patch.mark !== undefined ? patch.mark : base.mark,
+            geometry:
+              patch.geometry !== undefined ? patch.geometry : base.geometry,
           },
         }
       }),
     )
   }
 
-  function setAllStatus(status: IfcSuggestionStatus) {
+  function patchGeo(id: string, key: string, raw: string) {
     setRows((prev) =>
       prev.map((r) => {
-        if (status === 'ACCEPTED' && (!r.shape || !r.geometry)) return r
-        return { ...r, status }
+        if (r.id !== id) return r
+        const base = r.mappedInstanceData || {
+          elementKey: 'WALLS' as const,
+          shape: 'LINEAR' as const,
+          mark: null,
+          geometry: {} as Record<string, number>,
+        }
+        const g = { ...(base.geometry || {}) }
+        const n = parseFloat(raw)
+        if (Number.isFinite(n)) g[key] = n
+        else delete g[key]
+        return {
+          ...r,
+          mappedInstanceData: { ...base, geometry: g },
+        }
       }),
     )
   }
 
-  const acceptedCount = rows.filter((r) => r.status === 'ACCEPTED').length
-  const pendingCount = rows.filter((r) => r.status === 'PENDING').length
-  const ready =
-    job?.status === 'SUCCEEDED' && !uploading && rows.length >= 0
-
-  async function onCommit() {
-    if (!job || !acceptedCount) return
-    setCommitting(true)
+  async function onAccept(row: IfcSuggestion) {
+    if (!job) return
+    if (row.entityType !== 'IfcWall') {
+      setError('Slabs cannot be accepted yet — model them manually in Slabs.')
+      return
+    }
+    const missing = wallMissingFields(row)
+    if (missing.length) {
+      setError(
+        `Fill ${missing.join(', ')} before accepting “${row.name || row.sourceGlobalId}”.`,
+      )
+      return
+    }
+    setBusyId(row.id)
     setError(null)
     try {
-      await commitIfcImport(
+      const res = await acceptIfcSuggestion(
         projectId,
         job.id,
+        row.id,
         floorId,
-        rows.map((r) => ({
-          id: r.id,
-          status: r.status,
-          mark: r.mark,
-          shape: r.shape,
-          geometry: r.geometry,
-        })),
+        row.mappedInstanceData,
+      )
+      setRows((prev) =>
+        prev.map((r) => (r.id === row.id ? res.suggestion : r)),
       )
       onCommitted()
-      close()
+      if (res.skippedDuplicate) {
+        setError(
+          `Already imported (GlobalId ${row.sourceGlobalId}) — linked existing instance ${res.instance?.mark || ''}`,
+        )
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Commit failed')
+      setError(err instanceof ApiError ? err.message : 'Accept failed')
     } finally {
-      setCommitting(false)
+      setBusyId(null)
     }
+  }
+
+  async function onReject(row: IfcSuggestion) {
+    if (!job) return
+    setBusyId(row.id)
+    setError(null)
+    try {
+      const res = await rejectIfcSuggestion(projectId, job.id, row.id)
+      setRows((prev) =>
+        prev.map((r) => (r.id === row.id ? res.suggestion : r)),
+      )
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Reject failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const parsing = job?.status === 'QUEUED' || job?.status === 'RUNNING'
+  const ready = job?.status === 'SUCCEEDED' && !uploading
+  const grouped = useMemo(() => groupByType(rows), [rows])
+  const pendingCount = rows.filter((r) => r.status === 'PENDING').length
+  const acceptedCount = rows.filter((r) => r.status === 'ACCEPTED').length
+  const manualCount = rows.filter((r) => r.needsManualModeling).length
+
+  function renderGroup(title: string, list: IfcSuggestion[]) {
+    if (!list.length) return null
+    return (
+      <div className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-ink">
+          {title}{' '}
+          <span className="text-steel font-normal normal-case">
+            ({list.length})
+          </span>
+        </h3>
+        <div className="border border-steel-border max-h-80 overflow-auto">
+          <DataTable compact>
+            <DataTable.Header>
+              <DataTable.Row>
+                <DataTable.HeaderCell>Conf.</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Name / GlobalId</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Mark</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Shape</DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right">L</DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right">T</DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right">H</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Status</DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-32" />
+              </DataTable.Row>
+            </DataTable.Header>
+            <DataTable.Body>
+              {list.map((row) => {
+                const missing = wallMissingFields(row)
+                const incomplete = missing.length > 0
+                const low = row.confidence === 'LOW'
+                const manual = row.needsManualModeling
+                const pending = row.status === 'PENDING'
+                const canEditWall =
+                  pending && row.entityType === 'IfcWall'
+                return (
+                  <DataTable.Row
+                    key={row.id}
+                    className={
+                      row.status === 'REJECTED'
+                        ? 'opacity-50'
+                        : row.status === 'ACCEPTED'
+                          ? 'bg-signal/5'
+                          : low || manual
+                            ? 'bg-amber-500/10'
+                            : undefined
+                    }
+                    title={
+                      [
+                        ...(row.confidenceNotes || []),
+                        row.skipReason || '',
+                        incomplete && pending
+                          ? `Need: ${missing.join(', ')}`
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    }
+                  >
+                    <DataTable.Cell
+                      className={`text-[11px] font-mono ${
+                        low ? 'text-amber-700 font-semibold' : 'text-steel'
+                      }`}
+                    >
+                      {row.confidence}
+                      {manual ? (
+                        <span className="block text-amber-700">manual</span>
+                      ) : null}
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-[11px]">
+                      <div className="text-ink">{row.name || '—'}</div>
+                      <div className="font-mono text-steel truncate max-w-[10rem]">
+                        {row.sourceGlobalId}
+                      </div>
+                      {row.skipReason ? (
+                        <div className="text-[10px] text-amber-700 mt-0.5">
+                          {row.skipReason}
+                        </div>
+                      ) : null}
+                    </DataTable.Cell>
+                    <DataTable.Cell>
+                      <input
+                        className={`${inputCls} w-16 font-mono`}
+                        placeholder="auto"
+                        value={row.mappedInstanceData?.mark || ''}
+                        disabled={!canEditWall}
+                        onChange={(e) =>
+                          patchLocal(row.id, {
+                            mark: e.target.value || null,
+                          })
+                        }
+                      />
+                    </DataTable.Cell>
+                    <DataTable.Cell>
+                      {canEditWall ? (
+                        <select
+                          className={`${inputCls} font-mono`}
+                          value={row.mappedInstanceData?.shape || ''}
+                          onChange={(e) =>
+                            patchLocal(row.id, {
+                              shape: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          <option value="LINEAR">LINEAR</option>
+                          <option value="CURVED">CURVED</option>
+                        </select>
+                      ) : (
+                        <span className="font-mono text-[11px]">
+                          {row.mappedInstanceData?.shape || '—'}
+                        </span>
+                      )}
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`${inputCls} w-16 text-right font-mono`}
+                        value={geoVal(row.mappedInstanceData, 'length')}
+                        disabled={
+                          !canEditWall ||
+                          row.mappedInstanceData?.shape !== 'LINEAR'
+                        }
+                        onChange={(e) =>
+                          patchGeo(row.id, 'length', e.target.value)
+                        }
+                      />
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-right">
+                      <input
+                        type="number"
+                        step="0.001"
+                        className={`${inputCls} w-16 text-right font-mono`}
+                        value={geoVal(row.mappedInstanceData, 'thickness')}
+                        disabled={!canEditWall}
+                        onChange={(e) =>
+                          patchGeo(row.id, 'thickness', e.target.value)
+                        }
+                      />
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-right">
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`${inputCls} w-16 text-right font-mono`}
+                        value={geoVal(row.mappedInstanceData, 'height')}
+                        disabled={!canEditWall}
+                        onChange={(e) =>
+                          patchGeo(row.id, 'height', e.target.value)
+                        }
+                      />
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-[11px] font-mono text-steel">
+                      {row.status}
+                    </DataTable.Cell>
+                    <DataTable.Cell>
+                      {pending ? (
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            className="text-[11px] text-ink underline disabled:opacity-40"
+                            disabled={
+                              busyId === row.id || row.entityType !== 'IfcWall'
+                            }
+                            title={
+                              incomplete
+                                ? `Fill ${missing.join(', ')} first`
+                                : 'Create schedule instance'
+                            }
+                            onClick={() => void onAccept(row)}
+                          >
+                            {busyId === row.id ? '…' : 'Accept'}
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[11px] text-danger underline disabled:opacity-40"
+                            disabled={busyId === row.id}
+                            onClick={() => void onReject(row)}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-steel">—</span>
+                      )}
+                    </DataTable.Cell>
+                  </DataTable.Row>
+                )
+              })}
+            </DataTable.Body>
+          </DataTable>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -145,224 +516,75 @@ export function IfcImportPanel({
       />
       <GhostButton
         className="!text-xs !py-2"
-        disabled={uploading}
+        disabled={uploading || parsing}
         onClick={() => fileRef.current?.click()}
       >
         Import from IFC
       </GhostButton>
 
-      <Modal open={open} title="Import walls from IFC" onClose={close} size="xl">
+      <Modal open={open} title="Import from IFC — review" onClose={close} size="xl">
         <div className="space-y-4">
           <p className="text-xs text-steel leading-relaxed">
-            Parsed walls are{' '}
-            <span className="text-ink">suggestions only</span>. Accept or reject
-            each row, edit dimensions if needed, then import accepted walls as
-            schedule instances. Rebar and grade use project defaults — nothing
-            is auto-committed.
+            Upload runs the IFC parser in the background. Walls are mapped when
+            possible; slabs and skipped entities are listed for{' '}
+            <span className="text-ink">manual modeling</span>. Accept creates a
+            schedule instance tagged <span className="font-mono">IFC_IMPORT</span>{' '}
+            (duplicate GlobalIds are skipped). Max file size{' '}
+            <span className="font-mono text-ink">200 MB</span>.
           </p>
 
           {uploading && (
-            <p className="text-sm text-ink">Parsing IFC file…</p>
+            <p className="text-sm text-ink">Uploading IFC file…</p>
+          )}
+          {!uploading && job?.status === 'QUEUED' && (
+            <p className="text-sm text-ink">Queued for parsing…</p>
+          )}
+          {!uploading && job?.status === 'RUNNING' && (
+            <p className="text-sm text-ink">
+              Parsing IFC… Large models can take several minutes.
+            </p>
           )}
 
           {error && <p className="text-sm text-danger">{error}</p>}
 
           {ready && job && (
             <>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-steel">
+              <div className="flex flex-wrap gap-3 text-xs text-steel">
                 <span>
                   {job.fileName} · floor{' '}
-                  <span className="font-mono text-ink">{floorId}</span> ·{' '}
-                  {rows.length} walls · {acceptedCount} accepted · {pendingCount}{' '}
-                  pending
+                  <span className="font-mono text-ink">{floorId}</span>
+                </span>
+                <span>
+                  {rows.length} suggestions · {pendingCount} pending ·{' '}
+                  {acceptedCount} accepted · {manualCount} need manual modeling
+                </span>
+                <span>
+                  parse: {job.summary.walls} walls / {job.summary.slabs} slabs
                   {job.summary.skipped
                     ? ` · ${job.summary.skipped} skipped geometry`
                     : ''}
-                </span>
-                <span className="ml-auto flex gap-2">
-                  <GhostButton
-                    className="!text-[11px] !py-1 !px-2"
-                    onClick={() => setAllStatus('ACCEPTED')}
-                  >
-                    Accept all
-                  </GhostButton>
-                  <GhostButton
-                    className="!text-[11px] !py-1 !px-2"
-                    onClick={() => setAllStatus('REJECTED')}
-                  >
-                    Reject all
-                  </GhostButton>
-                  <GhostButton
-                    className="!text-[11px] !py-1 !px-2"
-                    onClick={() => setAllStatus('PENDING')}
-                  >
-                    Reset
-                  </GhostButton>
                 </span>
               </div>
 
               {rows.length === 0 ? (
                 <p className="text-sm text-steel">
-                  No walls with extractable geometry were found in this IFC.
+                  No wall or slab entities were found in this IFC.
                 </p>
               ) : (
-                <div className="border border-steel-border max-h-96 overflow-auto">
-                  <DataTable compact>
-                    <DataTable.Header>
-                      <DataTable.Row>
-                        <DataTable.HeaderCell>Status</DataTable.HeaderCell>
-                        <DataTable.HeaderCell>Name / GlobalId</DataTable.HeaderCell>
-                        <DataTable.HeaderCell>Mark</DataTable.HeaderCell>
-                        <DataTable.HeaderCell>Shape</DataTable.HeaderCell>
-                        <DataTable.HeaderCell align="right">L</DataTable.HeaderCell>
-                        <DataTable.HeaderCell align="right">T</DataTable.HeaderCell>
-                        <DataTable.HeaderCell align="right">H</DataTable.HeaderCell>
-                        <DataTable.HeaderCell>Conf.</DataTable.HeaderCell>
-                        <DataTable.HeaderCell className="w-28" />
-                      </DataTable.Row>
-                    </DataTable.Header>
-                    <DataTable.Body>
-                      {rows.map((row) => {
-                        const incomplete = !row.shape || !row.geometry
-                        return (
-                          <DataTable.Row
-                            key={row.id}
-                            className={
-                              row.status === 'REJECTED'
-                                ? 'opacity-50'
-                                : row.status === 'ACCEPTED'
-                                  ? 'bg-signal/5'
-                                  : row.needsManualReview
-                                    ? 'bg-amber-500/5'
-                                    : undefined
-                            }
-                            title={row.confidenceNotes.join(' · ')}
-                          >
-                            <DataTable.Cell className="text-[11px] font-mono text-steel">
-                              {row.status}
-                              {row.needsManualReview ? (
-                                <span className="block text-amber-600">review</span>
-                              ) : null}
-                            </DataTable.Cell>
-                            <DataTable.Cell className="text-[11px]">
-                              <div className="text-ink">{row.name || '—'}</div>
-                              <div className="font-mono text-steel truncate max-w-[10rem]">
-                                {row.sourceGlobalId}
-                              </div>
-                            </DataTable.Cell>
-                            <DataTable.Cell>
-                              <input
-                                className={`${inputCls} w-16 font-mono`}
-                                placeholder="auto"
-                                value={row.mark || ''}
-                                disabled={row.status === 'REJECTED'}
-                                onChange={(e) =>
-                                  patchRow(row.id, {
-                                    mark: e.target.value || null,
-                                  })
-                                }
-                              />
-                            </DataTable.Cell>
-                            <DataTable.Cell className="font-mono text-[11px]">
-                              {row.shape || '—'}
-                            </DataTable.Cell>
-                            <DataTable.Cell className="text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                className={`${inputCls} w-16 text-right font-mono`}
-                                value={geoNum(row, 'length')}
-                                disabled={
-                                  row.status === 'REJECTED' ||
-                                  row.shape !== 'LINEAR'
-                                }
-                                onChange={(e) =>
-                                  patchGeometry(row.id, 'length', e.target.value)
-                                }
-                              />
-                            </DataTable.Cell>
-                            <DataTable.Cell className="text-right">
-                              <input
-                                type="number"
-                                step="0.001"
-                                className={`${inputCls} w-16 text-right font-mono`}
-                                value={geoNum(row, 'thickness')}
-                                disabled={row.status === 'REJECTED' || incomplete}
-                                onChange={(e) =>
-                                  patchGeometry(
-                                    row.id,
-                                    'thickness',
-                                    e.target.value,
-                                  )
-                                }
-                              />
-                            </DataTable.Cell>
-                            <DataTable.Cell className="text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                className={`${inputCls} w-16 text-right font-mono`}
-                                value={geoNum(row, 'height')}
-                                disabled={row.status === 'REJECTED' || incomplete}
-                                onChange={(e) =>
-                                  patchGeometry(row.id, 'height', e.target.value)
-                                }
-                              />
-                            </DataTable.Cell>
-                            <DataTable.Cell className="text-[11px] font-mono text-steel">
-                              {row.confidence}
-                            </DataTable.Cell>
-                            <DataTable.Cell>
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  className="text-[11px] text-ink underline disabled:opacity-40"
-                                  disabled={incomplete}
-                                  onClick={() =>
-                                    patchRow(row.id, { status: 'ACCEPTED' })
-                                  }
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  type="button"
-                                  className="text-[11px] text-danger underline"
-                                  onClick={() =>
-                                    patchRow(row.id, { status: 'REJECTED' })
-                                  }
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            </DataTable.Cell>
-                          </DataTable.Row>
-                        )
-                      })}
-                    </DataTable.Body>
-                  </DataTable>
+                <div className="space-y-5">
+                  {renderGroup('Walls', grouped.walls)}
+                  {renderGroup(
+                    'Slabs (manual modeling)',
+                    grouped.slabs,
+                  )}
                 </div>
               )}
             </>
           )}
 
           <div className="flex justify-end gap-2 pt-1">
-            <GhostButton className="!text-xs !py-1.5 !px-3" onClick={close}>
-              Cancel
-            </GhostButton>
-            <PrimaryButton
-              className="!text-xs !py-2"
-              disabled={
-                committing ||
-                job?.status !== 'SUCCEEDED' ||
-                acceptedCount === 0
-              }
-              onClick={() => {
-                void onCommit()
-              }}
-            >
-              {committing
-                ? 'Creating instances…'
-                : `Create ${acceptedCount} instance${acceptedCount === 1 ? '' : 's'}`}
+            <PrimaryButton className="!text-xs !py-2" onClick={close}>
+              Done
             </PrimaryButton>
           </div>
         </div>

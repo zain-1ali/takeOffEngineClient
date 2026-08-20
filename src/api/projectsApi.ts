@@ -327,6 +327,66 @@ export function getIfcImportJob(projectId: string, jobId: string) {
   )
 }
 
+export function listIfcSuggestions(projectId: string, jobId: string) {
+  return api<{ suggestions: import('../types/ifcImport').IfcSuggestion[] }>(
+    `/api/projects/${projectId}/ifc-import/${jobId}/suggestions`,
+  )
+}
+
+export function patchIfcSuggestion(
+  projectId: string,
+  jobId: string,
+  suggestionId: string,
+  mappedInstanceData: import('../types/ifcImport').IfcMappedInstanceData,
+) {
+  return api<{ suggestion: import('../types/ifcImport').IfcSuggestion }>(
+    `/api/projects/${projectId}/ifc-import/${jobId}/suggestions/${suggestionId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ mappedInstanceData }),
+    },
+  )
+}
+
+export function acceptIfcSuggestion(
+  projectId: string,
+  jobId: string,
+  suggestionId: string,
+  floorId: string,
+  mappedInstanceData?: import('../types/ifcImport').IfcMappedInstanceData | null,
+) {
+  return api<{
+    suggestion: import('../types/ifcImport').IfcSuggestion
+    skippedDuplicate: boolean
+    instance: {
+      id: string
+      mark: string
+      shape: string
+      floorId: string
+      elementKey: string
+      source: string | null
+      sourceGlobalId: string | null
+    } | null
+  }>(
+    `/api/projects/${projectId}/ifc-import/${jobId}/suggestions/${suggestionId}/accept`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ floorId, mappedInstanceData }),
+    },
+  )
+}
+
+export function rejectIfcSuggestion(
+  projectId: string,
+  jobId: string,
+  suggestionId: string,
+) {
+  return api<{ suggestion: import('../types/ifcImport').IfcSuggestion }>(
+    `/api/projects/${projectId}/ifc-import/${jobId}/suggestions/${suggestionId}/reject`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+}
+
 export function commitIfcImport(
   projectId: string,
   jobId: string,
