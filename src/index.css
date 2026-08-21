@@ -178,3 +178,41 @@ textarea:focus-visible {
   color: var(--ink);
   margin-bottom: 14px;
 }
+
+/* IFC upload progress — smooth fill + soft sheen */
+.ifc-upload-bar {
+  position: relative;
+  min-width: 0;
+  transition: width 180ms ease-out;
+  overflow: hidden;
+}
+.ifc-upload-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    color-mix(in srgb, white 28%, transparent) 50%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: ifc-upload-sheen 1.4s ease-in-out infinite;
+}
+@keyframes ifc-upload-sheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ifc-upload-bar {
+    transition: none;
+  }
+  .ifc-upload-bar::after {
+    animation: none;
+  }
+}
+

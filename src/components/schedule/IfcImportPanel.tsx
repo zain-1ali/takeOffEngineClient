@@ -108,6 +108,7 @@ export function IfcImportPanel({
   const fileRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState(0)
   const [job, setJob] = useState<IfcImportJob | null>(null)
   const [rows, setRows] = useState<IfcSuggestion[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -119,6 +120,7 @@ export function IfcImportPanel({
     setRows([])
     setError(null)
     setUploading(false)
+    setUploadPercent(0)
     setBusyId(null)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -141,8 +143,14 @@ export function IfcImportPanel({
     }
 
     setUploading(true)
+    setUploadPercent(0)
     try {
-      const { job: created } = await startIfcImport(projectId, file)
+      const { job: created } = await startIfcImport(
+        projectId,
+        file,
+        ({ percent }) => setUploadPercent(percent),
+      )
+      setUploadPercent(100)
       setJob(created)
       if (created.status === 'SUCCEEDED') {
         await loadSuggestions(created.id)
@@ -534,7 +542,25 @@ export function IfcImportPanel({
           </p>
 
           {uploading && (
-            <p className="text-sm text-ink">Uploading IFC file…</p>
+            <div className="space-y-2" role="status" aria-live="polite">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-sm text-ink">Uploading IFC file</p>
+                <p className="font-mono text-sm tabular-nums text-signal-text">
+                  {uploadPercent}%
+                </p>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-sm bg-steel-border/60">
+                <div
+                  className="ifc-upload-bar h-full rounded-sm bg-signal"
+                  style={{ width: `${uploadPercent}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-steel">
+                {uploadPercent < 100
+                  ? 'Sending file to the server…'
+                  : 'Upload complete — starting parse…'}
+              </p>
+            </div>
           )}
           {!uploading && job?.status === 'QUEUED' && (
             <p className="text-sm text-ink">Queued for parsing…</p>

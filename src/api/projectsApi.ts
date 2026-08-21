@@ -303,22 +303,75 @@ export function deleteManualBoqItem(projectId: string, itemId: string) {
   )
 }
 
-export async function startIfcImport(projectId: string, file: File) {
+export type UploadProgress = {
+  loaded: number
+  total: number
+  /** 0–100 integer */
+  percent: number
+}
+
+export async function startIfcImport(
+  projectId: string,
+  file: File,
+  onProgress?: (progress: UploadProgress) => void,
+) {
   const body = new FormData()
   body.append('file', file)
-  const headers = new Headers()
-  const token = getAccessToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(
-    `${API_BASE_URL}/api/projects/${projectId}/ifc-import`,
-    { method: 'POST', body, credentials: 'include', headers },
-  )
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : null
-  if (!res.ok) {
-    throw new ApiError(res.status, data?.error || `Upload failed (${res.status})`)
-  }
-  return data as { jobId: string; job: IfcImportJob }
+
+  return new Promise<{ jobId: string; job: IfcImportJob }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open(
+      'POST',
+      `${API_BASE_URL}/api/projects/${projectId}/ifc-import`,
+    )
+    xhr.withCredentials = true
+
+    const token = getAccessToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress) return
+      const total = event.lengthComputable && event.total > 0 ? event.total : file.size
+      const loaded = event.loaded
+      const percent =
+        total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
+      onProgress({ loaded, total, percent })
+    }
+
+    xhr.upload.onload = () => {
+      onProgress?.({ loaded: file.size, total: file.size, percent: 100 })
+    }
+
+    xhr.onerror = () => {
+      reject(new ApiError(0, 'Network error while uploading IFC file'))
+    }
+
+    xhr.onload = () => {
+      let data: { error?: string; jobId?: string; job?: IfcImportJob } | null =
+        null
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        data = null
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(
+          new ApiError(
+            xhr.status,
+            data?.error || `Upload failed (${xhr.status})`,
+          ),
+        )
+        return
+      }
+      if (!data?.job) {
+        reject(new ApiError(xhr.status, 'Upload succeeded but job was missing'))
+        return
+      }
+      resolve(data as { jobId: string; job: IfcImportJob })
+    }
+
+    xhr.send(body)
+  })
 }
 
 export function getIfcImportJob(projectId: string, jobId: string) {
