@@ -53,6 +53,16 @@ import { parseOpenings } from '../../lib/openings'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
+const IFC_IMPORT_KEYS = new Set([
+  'WALLS',
+  'SLABS',
+  'PAD_FOOTING',
+  'STRIP_FOOTING',
+  'PILE_CAP',
+  'RAFT',
+  'COLUMNS',
+  'BEAMS',
+])
 
 function formatQty(v: unknown, dec: number): string {
   if (v == null || typeof v !== 'number' || Number.isNaN(v)) return '—'
@@ -375,13 +385,14 @@ export function ScheduleTab({
             Duplicate selected…
             {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </GhostButton>
-          {elementKey === 'WALLS' && (
+          {IFC_IMPORT_KEYS.has(elementKey) ? (
             <IfcImportPanel
               projectId={projectId}
               floors={floors}
+              elementKey={elementKey}
               onCommitted={invalidate}
             />
-          )}
+          ) : null}
           {POINT_PLACEMENT_KEYS.has(elementKey) && (
             <GhostButton
               disabled={addMut.isPending}

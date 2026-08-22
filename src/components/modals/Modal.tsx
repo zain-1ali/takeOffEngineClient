@@ -1,6 +1,9 @@
 import { type ReactNode, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
+/** Only the topmost open modal should close on Escape. */
+let modalEscapeDepth = 0
+
 export function Modal({
   open,
   title,
@@ -35,11 +38,19 @@ export function Modal({
 
   useEffect(() => {
     if (!open || !closeOnEscape) return
+    modalEscapeDepth += 1
+    const depth = modalEscapeDepth
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      if (depth !== modalEscapeDepth) return
+      e.preventDefault()
+      onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      modalEscapeDepth -= 1
+    }
   }, [open, onClose, closeOnEscape])
 
   if (!open) return null

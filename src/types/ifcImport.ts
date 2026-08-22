@@ -7,7 +7,12 @@ export type IfcImportJobStatus =
   | 'COMMITTED'
 export type IfcWallConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type IfcSuggestionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
-export type IfcSuggestionEntityType = 'IfcWall' | 'IfcSlab'
+export type IfcSuggestionEntityType =
+  | 'IfcWall'
+  | 'IfcSlab'
+  | 'IfcFooting'
+  | 'IfcColumn'
+  | 'IfcBeam'
 export type IfcFloorMatchStatus =
   | 'MATCHED_NAME'
   | 'MATCHED_ELEVATION'
@@ -24,7 +29,15 @@ export type IfcSourceStorey = {
 }
 
 export type IfcMappedInstanceData = {
-  elementKey: 'WALLS' | 'SLABS' | null
+  elementKey:
+    | 'WALLS'
+    | 'SLABS'
+    | 'PAD_FOOTING'
+    | 'STRIP_FOOTING'
+    | 'PILE_CAP'
+    | 'COLUMNS'
+    | 'BEAMS'
+    | null
   shape: string | null
   mark: string | null
   geometry: Record<string, number> | null
@@ -89,6 +102,9 @@ export type IfcImportJob = {
   summary: {
     walls: number
     slabs: number
+    footings?: number
+    columns?: number
+    beams?: number
     geometryOk: number
     skipped: number
   }

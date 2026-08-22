@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { ELEMENT_ENGINES } from '../../elementEngines'
+import { ELEMENT_SCHEMAS } from '../../constants/elementSchemas'
 import { COLORS3D } from '../../three/colors'
-import { buildWallModel, type WallInstance } from '../../three/buildWallModel'
 import { disposeObject3D } from '../../three/buildModelForInstance'
 import { modelViewOptions } from '../../three/viewOptions'
 import type { IfcMappedInstanceData, IfcSuggestionConfidence } from '../../types/ifcImport'
@@ -10,58 +11,80 @@ import type { IfcMappedInstanceData, IfcSuggestionConfidence } from '../../types
 const LOW_OUTLINE = 0xf59e0b
 const HIGH_OUTLINE = COLORS3D.wire
 
+const PREVIEW_KEYS = new Set([
+  'WALLS',
+  'SLABS',
+  'PAD_FOOTING',
+  'STRIP_FOOTING',
+  'PILE_CAP',
+  'COLUMNS',
+  'BEAMS',
+])
+
 type CameraState = {
   theta: number
   phi: number
   radius: number
 }
 
-function suggestionToWallInstance(
+function previewPayload(
   data: IfcMappedInstanceData,
-): WallInstance | null {
-  const shape = data.shape
-  const g = data.geometry
-  if ((shape !== 'LINEAR' && shape !== 'CURVED') || !g) return null
-  const thickness = Number(g.thickness)
-  const height = Number(g.height)
-  if (!(thickness > 0) || !(height > 0)) return null
-  if (shape === 'LINEAR') {
-    const length = Number(g.length)
-    if (!(length > 0)) return null
-    return {
-      shape: 'LINEAR',
-      length,
-      thickness,
-      height,
-      cover: 40,
-    }
-  }
-  const radius = Number(g.radius)
-  const arcAngleDeg = Number(g.arcAngleDeg)
-  if (!(radius > 0) || !(arcAngleDeg > 0)) return null
+): { elementKey: string; instance: Record<string, unknown> } | null {
+  const ek = data.elementKey
+  if (!ek || !PREVIEW_KEYS.has(ek) || !data.shape || !data.geometry) return null
+  if (!ELEMENT_ENGINES[ek]) return null
+  const schema = ELEMENT_SCHEMAS[ek]
   return {
-    shape: 'CURVED',
-    radius,
-    arcAngleDeg,
-    thickness,
-    height,
-    cover: 40,
+    elementKey: ek,
+    instance: {
+      shape: data.shape,
+      cover: 40,
+      bottomMainDia: 12,
+      bottomMainSpacing: 200,
+      bottomDistDia: 12,
+      bottomDistSpacing: 200,
+      mainDia: 12,
+      mainSpacing: 150,
+      distDia: 12,
+      distSpacing: 250,
+      starterBarsPerPile: 4,
+      starterDia: 20,
+      starterProjection: 0.8,
+      starterEmbedment: 0.4,
+      ribBarsPerRib: 2,
+      ...(schema?.rebarDefaults || {}),
+      ...(ek === 'COLUMNS'
+        ? { cover: 40, tieDia: 8, tieSpacing: 200 }
+        : {}),
+      ...(ek === 'BEAMS'
+        ? { cover: 40, linkDia: 8, linkSpacing: 200 }
+        : {}),
+      ...data.geometry,
+    },
   }
 }
 
-function planDim(wall: WallInstance): number {
-  if (wall.shape === 'CURVED') {
-    const arc =
-      ((wall.arcAngleDeg || 0) * Math.PI) / 180 * (wall.radius || 0)
-    return Math.max(
-      1,
-      wall.radius || 0,
-      wall.height,
-      wall.thickness,
-      arc,
-    )
-  }
-  return Math.max(1, wall.length || 0, wall.height, wall.thickness)
+function planDim(geometry: Record<string, number>): number {
+  const nums = [
+    geometry.length,
+    geometry.width,
+    geometry.height,
+    geometry.thickness,
+    geometry.baseThickness,
+    geometry.radius,
+    geometry.diameter,
+    geometry.depth,
+    geometry.clearHeight,
+    geometry.flangeWidth,
+    geometry.overallDepth,
+    geometry.spanLength,
+    geometry.supportDepth,
+    geometry.tipDepth,
+    geometry.webWidth,
+  ]
+    .map((n) => Number(n) || 0)
+    .filter((n) => n > 0)
+  return Math.max(1, ...nums)
 }
 
 function applyOutlineColor(root: THREE.Object3D, color: number) {
@@ -80,16 +103,18 @@ function applyOutlineColor(root: THREE.Object3D, color: number) {
 }
 
 function buildPreviewModel(
-  wall: WallInstance,
+  data: IfcMappedInstanceData,
   confidence: IfcSuggestionConfidence,
-): THREE.Group {
+): THREE.Group | null {
+  const payload = previewPayload(data)
+  if (!payload) return null
   const prevRebar = modelViewOptions.showRebar
   const prevDims = modelViewOptions.showDims
   modelViewOptions.showRebar = false
   modelViewOptions.showDims = false
   let model: THREE.Group
   try {
-    model = buildWallModel(wall)
+    model = ELEMENT_ENGINES[payload.elementKey].build3D(payload.instance)
   } finally {
     modelViewOptions.showRebar = prevRebar
     modelViewOptions.showDims = prevDims
@@ -99,7 +124,6 @@ function buildPreviewModel(
   applyOutlineColor(model, outline)
 
   if (confidence === 'LOW') {
-    // Slightly warmer concrete fill so LOW reads at a glance even without edges.
     model.traverse((child) => {
       const mesh = child as THREE.Mesh
       if (!mesh.isMesh) return
@@ -112,10 +136,10 @@ function buildPreviewModel(
 }
 
 /**
- * Compact wall preview for IFC review — same mesh builder as the Model tab,
+ * Compact 3D preview for IFC review — same mesh builders as the Model tab,
  * without rebar/dims. One WebGL context; open from a Preview button.
  */
-export function IfcWallPreviewViewport({
+export function IfcSuggestionPreviewViewport({
   mapped,
   confidence,
   className,
@@ -134,15 +158,12 @@ export function IfcWallPreviewViewport({
     raf: number
   } | null>(null)
 
-  const wall = suggestionToWallInstance(mapped)
-  const rebuildKey = wall
+  const payload = previewPayload(mapped)
+  const rebuildKey = payload
     ? [
-        wall.shape,
-        wall.length ?? '',
-        wall.radius ?? '',
-        wall.arcAngleDeg ?? '',
-        wall.thickness,
-        wall.height,
+        payload.elementKey,
+        payload.instance.shape,
+        JSON.stringify(mapped.geometry),
         confidence,
       ].join(':')
     : 'empty'
@@ -210,7 +231,7 @@ export function IfcWallPreviewViewport({
       e.preventDefault()
       camRef.current.radius = Math.max(
         2,
-        Math.min(40, camRef.current.radius + e.deltaY * 0.01),
+        Math.min(80, camRef.current.radius + e.deltaY * 0.01),
       )
     }
 
@@ -263,18 +284,18 @@ export function IfcWallPreviewViewport({
       ctx.modelRoot.remove(child)
       disposeObject3D(child)
     }
-    if (!wall) return
-    const model = buildPreviewModel(wall, confidence)
+    const model = buildPreviewModel(mapped, confidence)
+    if (!model) return
     ctx.modelRoot.add(model)
-    camRef.current.radius = Math.max(3.5, planDim(wall) * 2.4)
-  }, [rebuildKey, wall, confidence])
+    camRef.current.radius = Math.max(3.5, planDim(mapped.geometry || {}) * 2.4)
+  }, [rebuildKey, mapped, confidence])
 
-  if (!wall) {
+  if (!payload) {
     return (
       <div
         className={`flex items-center justify-center border border-steel-border bg-bg text-sm text-steel ${className || 'h-72'}`}
       >
-        Complete shape and L/T/H (or radius/angle) to preview.
+        Complete shape and dimensions to preview.
       </div>
     )
   }
@@ -287,9 +308,18 @@ export function IfcWallPreviewViewport({
   )
 }
 
-export function canPreviewWallSuggestion(
+/** @deprecated Use IfcSuggestionPreviewViewport */
+export const IfcWallPreviewViewport = IfcSuggestionPreviewViewport
+
+export function canBuildIfcPreview(
   data: IfcMappedInstanceData | null | undefined,
 ): boolean {
   if (!data) return false
-  return suggestionToWallInstance(data) != null
+  return previewPayload(data) != null
+}
+
+export function canPreviewWallSuggestion(
+  data: IfcMappedInstanceData | null | undefined,
+): boolean {
+  return data?.elementKey === 'WALLS' && canBuildIfcPreview(data)
 }

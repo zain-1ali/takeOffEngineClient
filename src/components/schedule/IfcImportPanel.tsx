@@ -17,9 +17,26 @@ import type {
 import { Modal } from '../modals/Modal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
 import {
-  canPreviewWallSuggestion,
-  IfcWallPreviewViewport,
-} from './IfcWallPreviewViewport'
+  applySuggestionGeoPatch,
+  defaultMappedElementKey,
+  geoInputDisabled,
+  geoUiKey,
+  isBeamRow,
+  isColumnRow,
+  missingFields,
+  canPreviewIfcSuggestion,
+  previewDimCaption,
+} from './ifcReviewEdit'
+import {
+  emptyScopeCopy,
+  filterSuggestionsForScope,
+  otherTypesHint,
+  scopeGroupTitle,
+  scopeIntro,
+} from './ifcImportScope'
+import { IfcSuggestionPreviewViewport } from './IfcWallPreviewViewport'
+
+const IFC_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 const inputCls =
   'border border-steel-border bg-bg px-1.5 py-1 text-xs text-ink outline-none'
@@ -27,7 +44,21 @@ const inputCls =
 const actionBtn =
   'inline-flex items-center justify-center rounded-sm border px-2 py-1 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40'
 
-const IFC_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+const COLUMN_SHAPES = [
+  'RECTANGULAR',
+  'CIRCULAR',
+  'L_SHAPED',
+  'T_SHAPED',
+  'CRUCIFORM',
+] as const
+
+const BEAM_SHAPES = [
+  'RECTANGULAR',
+  'T_SECTION',
+  'L_SECTION',
+  'CANTILEVER_TAPERED',
+  'GROUND_TIE',
+] as const
 
 const CONF_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const
 
@@ -37,23 +68,6 @@ function geoVal(
 ): string {
   const v = data?.geometry?.[key]
   return v == null ? '' : String(v)
-}
-
-function wallMissingFields(row: IfcSuggestion): string[] {
-  if (row.entityType !== 'IfcWall') return ['Not a wall']
-  const data = row.mappedInstanceData
-  const missing: string[] = []
-  const shape = data?.shape
-  const g = data?.geometry
-  if (shape !== 'LINEAR' && shape !== 'CURVED') missing.push('Shape')
-  if (!(Number(g?.thickness) > 0)) missing.push('Thickness (T)')
-  if (!(Number(g?.height) > 0)) missing.push('Height (H)')
-  if (shape === 'LINEAR' && !(Number(g?.length) > 0)) missing.push('Length (L)')
-  if (shape === 'CURVED') {
-    if (!(Number(g?.radius) > 0)) missing.push('Radius')
-    if (!(Number(g?.arcAngleDeg) > 0)) missing.push('Arc angle')
-  }
-  return missing
 }
 
 /** Default LINEAR + seed thickness from name like "Wall 50 cm" when mapper left gaps. */
@@ -127,10 +141,12 @@ function groupByFloor(rows: IfcSuggestion[], floors: Floor[]) {
 export function IfcImportPanel({
   projectId,
   floors,
+  elementKey,
   onCommitted,
 }: {
   projectId: string
   floors: Floor[]
+  elementKey: string
   onCommitted: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -142,6 +158,9 @@ export function IfcImportPanel({
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [previewRow, setPreviewRow] = useState<IfcSuggestion | null>(null)
+  const [assumedShapeIds, setAssumedShapeIds] = useState<Set<string>>(
+    () => new Set(),
+  )
 
   function close() {
     setOpen(false)
@@ -152,6 +171,7 @@ export function IfcImportPanel({
     setUploadPercent(0)
     setBusyId(null)
     setPreviewRow(null)
+    setAssumedShapeIds(new Set())
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -239,7 +259,7 @@ export function IfcImportPanel({
       prev.map((r) => {
         if (r.id !== id) return r
         const base = r.mappedInstanceData || {
-          elementKey: r.entityType === 'IfcWall' ? 'WALLS' : 'SLABS',
+          elementKey: defaultMappedElementKey(r),
           shape: null,
           mark: null,
           geometry: null,
@@ -262,25 +282,23 @@ export function IfcImportPanel({
   }
 
   function patchGeo(id: string, key: string, raw: string) {
+    let seededShape: string | null = null
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r
-        const base = r.mappedInstanceData || {
-          elementKey: 'WALLS' as const,
-          shape: 'LINEAR' as const,
-          mark: null,
-          geometry: {} as Record<string, number>,
-        }
-        const g = { ...(base.geometry || {}) }
-        const n = parseFloat(raw)
-        if (Number.isFinite(n)) g[key] = n
-        else delete g[key]
-        return {
-          ...r,
-          mappedInstanceData: { ...base, geometry: g },
-        }
+        const result = applySuggestionGeoPatch(r, key, raw)
+        seededShape = result.seededShape
+        return result.row
       }),
     )
+    if (seededShape) {
+      setAssumedShapeIds((ids) => {
+        if (ids.has(id)) return ids
+        const next = new Set(ids)
+        next.add(id)
+        return next
+      })
+    }
   }
 
   async function onAssignFloor(row: IfcSuggestion, nextFloorId: string) {
@@ -305,17 +323,13 @@ export function IfcImportPanel({
 
   async function onAccept(row: IfcSuggestion) {
     if (!job) return
-    if (row.entityType !== 'IfcWall') {
-      setError('Slabs cannot be accepted yet — model them manually in Slabs.')
-      return
-    }
     if (!row.floorId) {
       setError(
         `Assign “${row.name || row.sourceGlobalId}” to a project floor before accepting it.`,
       )
       return
     }
-    const missing = wallMissingFields(row)
+    const missing = missingFields(row)
     if (missing.length) {
       setError(
         `Fill ${missing.join(', ')} before accepting “${row.name || row.sourceGlobalId}”.`,
@@ -365,17 +379,49 @@ export function IfcImportPanel({
 
   const parsing = job?.status === 'QUEUED' || job?.status === 'RUNNING'
   const ready = job?.status === 'SUCCEEDED' && !uploading
+  const scopedRows = useMemo(
+    () => filterSuggestionsForScope(rows, elementKey),
+    [rows, elementKey],
+  )
   const floorGroups = useMemo(
-    () => groupByFloor(rows, floors),
-    [rows, floors],
+    () => groupByFloor(scopedRows, floors),
+    [scopedRows, floors],
   )
   const livePreview = useMemo(() => {
     if (!previewRow) return null
     return rows.find((row) => row.id === previewRow.id) || previewRow
   }, [previewRow, rows])
-  const pendingCount = rows.filter((r) => r.status === 'PENDING').length
-  const acceptedCount = rows.filter((r) => r.status === 'ACCEPTED').length
-  const manualCount = rows.filter((r) => r.needsManualModeling).length
+  const pendingCount = scopedRows.filter((r) => r.status === 'PENDING').length
+  const acceptedCount = scopedRows.filter((r) => r.status === 'ACCEPTED').length
+  const manualCount = scopedRows.filter((r) => r.needsManualModeling).length
+  const emptyCopy = job
+    ? emptyScopeCopy(elementKey, rows, job.summary)
+    : { title: '', body: '' }
+  const alsoParsed = otherTypesHint(elementKey, rows)
+  const columnScope = elementKey === 'COLUMNS'
+  const beamScope = elementKey === 'BEAMS'
+
+  function geoInput(
+    row: IfcSuggestion,
+    missing: string[],
+    uiKey: string,
+    opts: { step?: string; min?: string } = {},
+  ) {
+    const key = geoUiKey(row, uiKey)
+    const canEdit = row.status === 'PENDING'
+    return (
+      <input
+        type="number"
+        step={opts.step || '0.01'}
+        min={opts.min}
+        data-geo-key={key}
+        className={`${inputCls} w-14 text-right font-mono`}
+        value={geoVal(row.mappedInstanceData, key)}
+        disabled={!canEdit || geoInputDisabled(row, key, missing)}
+        onChange={(e) => patchGeo(row.id, key, e.target.value)}
+      />
+    )
+  }
 
   function renderGroup(title: string, list: IfcSuggestion[]) {
     if (!list.length) return null
@@ -400,34 +446,84 @@ export function IfcImportPanel({
                 </DataTable.HeaderCell>
                 <DataTable.HeaderCell className="w-20">Mark</DataTable.HeaderCell>
                 <DataTable.HeaderCell className="w-24">Shape</DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right" className="w-16">
-                  L
-                </DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right" className="w-16">
-                  T
-                </DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right" className="w-16">
-                  H
-                </DataTable.HeaderCell>
+                {columnScope ? (
+                  <>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      W
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      D
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Dia
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      T
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Web
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      H
+                    </DataTable.HeaderCell>
+                  </>
+                ) : beamScope ? (
+                  <>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Span
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      W
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      D
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Tip D
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Flange T
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      Web
+                    </DataTable.HeaderCell>
+                  </>
+                ) : (
+                  <>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      L
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      W
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      T
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-16">
+                      H
+                    </DataTable.HeaderCell>
+                    <DataTable.HeaderCell align="right" className="w-14">
+                      Piles
+                    </DataTable.HeaderCell>
+                  </>
+                )}
                 <DataTable.HeaderCell className="w-20">Status</DataTable.HeaderCell>
                 <DataTable.HeaderCell className="w-52">Actions</DataTable.HeaderCell>
               </DataTable.Row>
             </DataTable.Header>
             <DataTable.Body>
               {list.map((row) => {
-                const missing = wallMissingFields(row)
+                const missing = missingFields(row)
                 const incomplete = missing.length > 0
                 const low = row.confidence === 'LOW'
                 const manual = row.needsManualModeling
                 const pending = row.status === 'PENDING'
-                const canEditWall =
-                  pending && row.entityType === 'IfcWall'
-                const canPreview =
-                  row.entityType === 'IfcWall' &&
-                  canPreviewWallSuggestion(row.mappedInstanceData)
+                const canEdit = pending
+                const canPreview = canPreviewIfcSuggestion(row)
                 return (
                   <DataTable.Row
                     key={row.id}
+                    data-suggestion-name={row.name || ''}
                     className={
                       row.status === 'REJECTED'
                         ? 'opacity-50'
@@ -513,7 +609,7 @@ export function IfcImportPanel({
                         className={`${inputCls} w-14 font-mono`}
                         placeholder="auto"
                         value={row.mappedInstanceData?.mark || ''}
-                        disabled={!canEditWall}
+                        disabled={!canEdit}
                         onChange={(e) =>
                           patchLocal(row.id, {
                             mark: e.target.value || null,
@@ -522,7 +618,7 @@ export function IfcImportPanel({
                       />
                     </DataTable.Cell>
                     <DataTable.Cell>
-                      {canEditWall ? (
+                      {canEdit && row.entityType === 'IfcWall' ? (
                         <select
                           className={`${inputCls} w-[5.5rem] font-mono`}
                           value={row.mappedInstanceData?.shape || ''}
@@ -536,60 +632,135 @@ export function IfcImportPanel({
                           <option value="LINEAR">LINEAR</option>
                           <option value="CURVED">CURVED</option>
                         </select>
+                      ) : canEdit && isColumnRow(row) ? (
+                        <select
+                          className={`${inputCls} w-[7.5rem] font-mono`}
+                          data-testid="column-shape"
+                          value={row.mappedInstanceData?.shape || ''}
+                          onChange={(e) =>
+                            patchLocal(row.id, {
+                              elementKey: 'COLUMNS',
+                              shape: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          {COLUMN_SHAPES.map((shape) => (
+                            <option key={shape} value={shape}>
+                              {shape}
+                            </option>
+                          ))}
+                        </select>
+                      ) : canEdit && isBeamRow(row) ? (
+                        <select
+                          className={`${inputCls} w-[9.5rem] font-mono`}
+                          data-testid="beam-shape"
+                          value={row.mappedInstanceData?.shape || ''}
+                          onChange={(e) =>
+                            patchLocal(row.id, {
+                              elementKey: 'BEAMS',
+                              shape: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          {BEAM_SHAPES.map((shape) => (
+                            <option key={shape} value={shape}>
+                              {shape}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <span className="font-mono text-[11px]">
-                          {row.mappedInstanceData?.shape || '—'}
+                          {row.entityType === 'IfcFooting' &&
+                          row.mappedInstanceData?.elementKey
+                            ? `${row.mappedInstanceData.elementKey} / ${
+                                row.mappedInstanceData.shape || '—'
+                              }`
+                            : row.mappedInstanceData?.shape || '—'}
+                          {assumedShapeIds.has(row.id) &&
+                          row.mappedInstanceData?.shape ? (
+                            <span className="block text-[10px] text-amber-700">
+                              assumed
+                            </span>
+                          ) : null}
                         </span>
                       )}
                     </DataTable.Cell>
-                    <DataTable.Cell className="text-right">
-                      <input
-                        type="number"
-                        step="0.01"
-                        className={`${inputCls} w-14 text-right font-mono`}
-                        value={geoVal(row.mappedInstanceData, 'length')}
-                        disabled={
-                          !canEditWall ||
-                          row.mappedInstanceData?.shape !== 'LINEAR'
-                        }
-                        onChange={(e) =>
-                          patchGeo(row.id, 'length', e.target.value)
-                        }
-                      />
-                    </DataTable.Cell>
-                    <DataTable.Cell className="text-right">
-                      <input
-                        type="number"
-                        step="0.001"
-                        className={`${inputCls} w-14 text-right font-mono`}
-                        value={geoVal(row.mappedInstanceData, 'thickness')}
-                        disabled={!canEditWall}
-                        onChange={(e) =>
-                          patchGeo(row.id, 'thickness', e.target.value)
-                        }
-                      />
-                    </DataTable.Cell>
-                    <DataTable.Cell className="text-right">
-                      <input
-                        type="number"
-                        step="0.01"
-                        className={`${inputCls} w-14 text-right font-mono`}
-                        value={geoVal(row.mappedInstanceData, 'height')}
-                        disabled={!canEditWall}
-                        onChange={(e) =>
-                          patchGeo(row.id, 'height', e.target.value)
-                        }
-                      />
-                    </DataTable.Cell>
+                    {columnScope ? (
+                      <>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'width')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'depth')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'diameter')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'thickness')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'webThickness')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'height')}
+                        </DataTable.Cell>
+                      </>
+                    ) : beamScope ? (
+                      <>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'spanLength')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'width')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'depth')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'tipDepth')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'flangeThickness')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'webWidth')}
+                        </DataTable.Cell>
+                      </>
+                    ) : (
+                      <>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'length')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'width')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'thickness', { step: '0.001' })}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'height')}
+                        </DataTable.Cell>
+                        <DataTable.Cell className="text-right">
+                          {geoInput(row, missing, 'pileCount', {
+                            step: '1',
+                            min: '1',
+                          })}
+                        </DataTable.Cell>
+                      </>
+                    )}
                     <DataTable.Cell className="text-[11px] font-mono text-steel">
                       {row.status}
                     </DataTable.Cell>
                     <DataTable.Cell>
-                      <div className="flex flex-nowrap items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
                           className={`${actionBtn} border-steel-border bg-bg text-ink hover:border-chalk hover:text-chalk`}
                           disabled={!canPreview}
+                          data-testid="ifc-preview"
                           title={
                             canPreview
                               ? low
@@ -608,9 +779,10 @@ export function IfcImportPanel({
                               className={`${actionBtn} border-signal/40 bg-signal text-bg hover:brightness-110`}
                               disabled={
                                 busyId === row.id ||
-                                row.entityType !== 'IfcWall' ||
+                                incomplete ||
                                 !row.floorId
                               }
+                              data-testid="ifc-accept"
                               title={
                                 !row.floorId
                                   ? 'Assign a project floor first'
@@ -630,6 +802,17 @@ export function IfcImportPanel({
                             >
                               Reject
                             </button>
+                            {incomplete ? (
+                              <span className="basis-full text-[10px] text-amber-700">
+                                {missing.includes('Piles')
+                                  ? 'Need Piles — IFC geometry has no pile count'
+                                  : `Need ${missing.join(', ')} before accepting`}
+                              </span>
+                            ) : !row.floorId ? (
+                              <span className="basis-full text-[10px] text-amber-700">
+                                Assign a project floor first
+                              </span>
+                            ) : null}
                           </>
                         ) : (
                           <span className="text-[11px] text-steel">—</span>
@@ -660,6 +843,7 @@ export function IfcImportPanel({
       <GhostButton
         className="!text-xs !py-2"
         disabled={uploading || parsing}
+        data-testid="ifc-import-button"
         onClick={() => fileRef.current?.click()}
       >
         Import from IFC
@@ -668,12 +852,7 @@ export function IfcImportPanel({
       <Modal open={open} title="Import from IFC — review" onClose={close} size="full">
         <div className="space-y-4">
           <p className="text-xs text-steel leading-relaxed max-w-4xl">
-            Upload runs the IFC parser in the background. Walls are mapped when
-            possible; slabs and skipped entities are listed for{' '}
-            <span className="text-ink">manual modeling</span>. Accept creates a
-            schedule instance tagged <span className="font-mono">IFC_IMPORT</span>{' '}
-            (duplicate GlobalIds are skipped). Max file size{' '}
-            <span className="font-mono text-ink">200 MB</span>.
+            {scopeIntro(elementKey)}
           </p>
 
           {uploading && (
@@ -714,57 +893,64 @@ export function IfcImportPanel({
                 <span>
                   {job.fileName} ·{' '}
                   <span className="font-mono text-ink">
-                    {rows.filter((row) => row.floorId).length}/{rows.length}
+                    {scopedRows.filter((row) => row.floorId).length}/
+                    {scopedRows.length}
                   </span>{' '}
                   assigned to project floors
                 </span>
                 <span>
-                  {rows.length} suggestions · {pendingCount} pending ·{' '}
-                  {acceptedCount} accepted · {manualCount} need manual modeling
+                  {scopedRows.length} {scopeGroupTitle(elementKey).toLowerCase()}{' '}
+                  · {pendingCount} pending · {acceptedCount} accepted ·{' '}
+                  {manualCount} need manual modeling
                 </span>
                 <span>
                   parse: {job.summary.walls} walls / {job.summary.slabs} slabs
+                  {' / '}
+                  {job.summary.footings ?? 0} footings
+                  {' / '}
+                  {job.summary.columns ?? 0} columns
+                  {' / '}
+                  {job.summary.beams ?? 0} beams
                   {job.summary.skipped
                     ? ` · ${job.summary.skipped} skipped geometry`
                     : ''}
                 </span>
               </div>
 
-              {rows.length === 0 ? (
-                <p className="text-sm text-steel">
-                  No wall or slab entities were found in this IFC.
-                </p>
+              {alsoParsed ? (
+                <p className="text-xs text-steel">{alsoParsed}</p>
+              ) : null}
+
+              {scopedRows.length === 0 ? (
+                <div
+                  className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm space-y-1 max-w-4xl"
+                  role="status"
+                >
+                  <p className="font-medium text-ink">{emptyCopy.title}</p>
+                  <p className="text-steel leading-relaxed">{emptyCopy.body}</p>
+                </div>
               ) : (
                 <div className="space-y-5">
-                  {floorGroups.map((group) => {
-                    const walls = group.rows.filter(
-                      (row) => row.entityType === 'IfcWall',
-                    )
-                    const slabs = group.rows.filter(
-                      (row) => row.entityType === 'IfcSlab',
-                    )
-                    return (
-                      <section
-                        key={group.key}
-                        className="space-y-3 border-t border-steel-border pt-4 first:border-t-0 first:pt-0"
+                  {floorGroups.map((group) => (
+                    <section
+                      key={group.key}
+                      className="space-y-3 border-t border-steel-border pt-4 first:border-t-0 first:pt-0"
+                    >
+                      <h2
+                        className={`font-display text-sm font-semibold ${
+                          group.key === '__unassigned__'
+                            ? 'text-amber-700'
+                            : 'text-ink'
+                        }`}
                       >
-                        <h2
-                          className={`font-display text-sm font-semibold ${
-                            group.key === '__unassigned__'
-                              ? 'text-amber-700'
-                              : 'text-ink'
-                          }`}
-                        >
-                          {group.title}{' '}
-                          <span className="font-mono text-xs font-normal text-steel">
-                            {group.rows.length}
-                          </span>
-                        </h2>
-                        {renderGroup('Walls', walls)}
-                        {renderGroup('Slabs (manual modeling)', slabs)}
-                      </section>
-                    )
-                  })}
+                        {group.title}{' '}
+                        <span className="font-mono text-xs font-normal text-steel">
+                          {group.rows.length}
+                        </span>
+                      </h2>
+                      {renderGroup(scopeGroupTitle(elementKey), group.rows)}
+                    </section>
+                  ))}
                 </div>
               )}
             </>
@@ -808,22 +994,11 @@ export function IfcImportPanel({
               ) : (
                 <span>Mapped geometry · drag to orbit · scroll to zoom</span>
               )}
-              {livePreview.mappedInstanceData.shape === 'LINEAR' ? (
-                <span className="font-mono text-ink">
-                  L {geoVal(livePreview.mappedInstanceData, 'length')} · T{' '}
-                  {geoVal(livePreview.mappedInstanceData, 'thickness')} · H{' '}
-                  {geoVal(livePreview.mappedInstanceData, 'height')}
-                </span>
-              ) : (
-                <span className="font-mono text-ink">
-                  R {geoVal(livePreview.mappedInstanceData, 'radius')} · ∠{' '}
-                  {geoVal(livePreview.mappedInstanceData, 'arcAngleDeg')}° · T{' '}
-                  {geoVal(livePreview.mappedInstanceData, 'thickness')} · H{' '}
-                  {geoVal(livePreview.mappedInstanceData, 'height')}
-                </span>
-              )}
+              <span className="font-mono text-ink">
+                {previewDimCaption(livePreview.mappedInstanceData)}
+              </span>
             </div>
-            <IfcWallPreviewViewport
+            <IfcSuggestionPreviewViewport
               key={livePreview.id}
               mapped={livePreview.mappedInstanceData}
               confidence={livePreview.confidence}
