@@ -8,6 +8,20 @@ export type IfcImportJobStatus =
 export type IfcWallConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type IfcSuggestionConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type IfcSuggestionEntityType = 'IfcWall' | 'IfcSlab'
+export type IfcFloorMatchStatus =
+  | 'MATCHED_NAME'
+  | 'MATCHED_ELEVATION'
+  | 'AMBIGUOUS'
+  | 'UNMATCHED'
+  | 'NO_STOREY'
+  | 'MANUAL'
+
+export type IfcSourceStorey = {
+  expressId: number
+  globalId: string | null
+  name: string | null
+  elevationM: number | null
+}
 
 export type IfcMappedInstanceData = {
   elementKey: 'WALLS' | 'SLABS' | null
@@ -25,6 +39,10 @@ export type IfcSuggestion = {
   expressId: number
   entityType: IfcSuggestionEntityType
   name: string | null
+  floorId: string | null
+  sourceStorey: IfcSourceStorey | null
+  floorMatchStatus: IfcFloorMatchStatus
+  floorMatchNote: string
   mappedInstanceData: IfcMappedInstanceData | null
   confidence: IfcSuggestionConfidence
   confidenceNotes: string[]
@@ -43,6 +61,10 @@ export type IfcWallSuggestion = {
   expressId: number
   elementKey: 'WALLS'
   name: string | null
+  floorId: string | null
+  sourceStorey: IfcSourceStorey | null
+  floorMatchStatus: IfcFloorMatchStatus
+  floorMatchNote: string
   mark: string | null
   shape: 'LINEAR' | 'CURVED' | null
   geometry: {

@@ -390,13 +390,16 @@ export function patchIfcSuggestion(
   projectId: string,
   jobId: string,
   suggestionId: string,
-  mappedInstanceData: import('../types/ifcImport').IfcMappedInstanceData,
+  patch: {
+    floorId?: string
+    mappedInstanceData?: import('../types/ifcImport').IfcMappedInstanceData
+  },
 ) {
   return api<{ suggestion: import('../types/ifcImport').IfcSuggestion }>(
     `/api/projects/${projectId}/ifc-import/${jobId}/suggestions/${suggestionId}`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ mappedInstanceData }),
+      body: JSON.stringify(patch),
     },
   )
 }
@@ -405,7 +408,6 @@ export function acceptIfcSuggestion(
   projectId: string,
   jobId: string,
   suggestionId: string,
-  floorId: string,
   mappedInstanceData?: import('../types/ifcImport').IfcMappedInstanceData | null,
 ) {
   return api<{
@@ -424,7 +426,7 @@ export function acceptIfcSuggestion(
     `/api/projects/${projectId}/ifc-import/${jobId}/suggestions/${suggestionId}/accept`,
     {
       method: 'POST',
-      body: JSON.stringify({ floorId, mappedInstanceData }),
+      body: JSON.stringify({ mappedInstanceData }),
     },
   )
 }
@@ -443,7 +445,6 @@ export function rejectIfcSuggestion(
 export function commitIfcImport(
   projectId: string,
   jobId: string,
-  floorId: string,
   suggestions: Array<Partial<IfcWallSuggestion> & { id: string }>,
 ) {
   return api<{
@@ -459,6 +460,6 @@ export function commitIfcImport(
     job: IfcImportJob
   }>(`/api/projects/${projectId}/ifc-import/${jobId}/commit`, {
     method: 'POST',
-    body: JSON.stringify({ floorId, suggestions }),
+    body: JSON.stringify({ suggestions }),
   })
 }

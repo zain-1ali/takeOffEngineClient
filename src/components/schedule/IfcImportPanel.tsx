@@ -3,10 +3,12 @@ import {
   acceptIfcSuggestion,
   getIfcImportJob,
   listIfcSuggestions,
+  patchIfcSuggestion,
   rejectIfcSuggestion,
   startIfcImport,
 } from '../../api/projectsApi'
 import { ApiError } from '../../lib/api'
+import type { Floor } from '../../types/api'
 import type {
   IfcImportJob,
   IfcMappedInstanceData,
@@ -14,9 +16,16 @@ import type {
 } from '../../types/ifcImport'
 import { Modal } from '../modals/Modal'
 import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import {
+  canPreviewWallSuggestion,
+  IfcWallPreviewViewport,
+} from './IfcWallPreviewViewport'
 
 const inputCls =
   'border border-steel-border bg-bg px-1.5 py-1 text-xs text-ink outline-none'
+
+const actionBtn =
+  'inline-flex items-center justify-center rounded-sm border px-2 py-1 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40'
 
 const IFC_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
@@ -90,19 +99,38 @@ function sortSuggestions(rows: IfcSuggestion[]): IfcSuggestion[] {
   })
 }
 
-function groupByType(rows: IfcSuggestion[]) {
-  const walls = rows.filter((r) => r.entityType === 'IfcWall')
-  const slabs = rows.filter((r) => r.entityType === 'IfcSlab')
-  return { walls, slabs }
+function groupByFloor(rows: IfcSuggestion[], floors: Floor[]) {
+  const ordered = [...floors].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label),
+  )
+  const knownIds = new Set(ordered.map((floor) => floor.floorId))
+  const groups = ordered
+    .map((floor) => ({
+      key: floor.floorId,
+      title: `${floor.label} (${floor.floorId})`,
+      rows: rows.filter((row) => row.floorId === floor.floorId),
+    }))
+    .filter((group) => group.rows.length > 0)
+  const unassigned = rows.filter(
+    (row) => !row.floorId || !knownIds.has(row.floorId),
+  )
+  if (unassigned.length) {
+    groups.push({
+      key: '__unassigned__',
+      title: 'Unassigned / ambiguous',
+      rows: unassigned,
+    })
+  }
+  return groups
 }
 
 export function IfcImportPanel({
   projectId,
-  floorId,
+  floors,
   onCommitted,
 }: {
   projectId: string
-  floorId: string
+  floors: Floor[]
   onCommitted: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -113,6 +141,7 @@ export function IfcImportPanel({
   const [rows, setRows] = useState<IfcSuggestion[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [previewRow, setPreviewRow] = useState<IfcSuggestion | null>(null)
 
   function close() {
     setOpen(false)
@@ -122,6 +151,7 @@ export function IfcImportPanel({
     setUploading(false)
     setUploadPercent(0)
     setBusyId(null)
+    setPreviewRow(null)
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -253,10 +283,36 @@ export function IfcImportPanel({
     )
   }
 
+  async function onAssignFloor(row: IfcSuggestion, nextFloorId: string) {
+    if (!job || !nextFloorId || row.status !== 'PENDING') return
+    setBusyId(row.id)
+    setError(null)
+    try {
+      const res = await patchIfcSuggestion(projectId, job.id, row.id, {
+        floorId: nextFloorId,
+      })
+      setRows((prev) =>
+        prev.map((item) => (item.id === row.id ? res.suggestion : item)),
+      )
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Floor assignment failed',
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function onAccept(row: IfcSuggestion) {
     if (!job) return
     if (row.entityType !== 'IfcWall') {
       setError('Slabs cannot be accepted yet — model them manually in Slabs.')
+      return
+    }
+    if (!row.floorId) {
+      setError(
+        `Assign “${row.name || row.sourceGlobalId}” to a project floor before accepting it.`,
+      )
       return
     }
     const missing = wallMissingFields(row)
@@ -273,7 +329,6 @@ export function IfcImportPanel({
         projectId,
         job.id,
         row.id,
-        floorId,
         row.mappedInstanceData,
       )
       setRows((prev) =>
@@ -310,7 +365,14 @@ export function IfcImportPanel({
 
   const parsing = job?.status === 'QUEUED' || job?.status === 'RUNNING'
   const ready = job?.status === 'SUCCEEDED' && !uploading
-  const grouped = useMemo(() => groupByType(rows), [rows])
+  const floorGroups = useMemo(
+    () => groupByFloor(rows, floors),
+    [rows, floors],
+  )
+  const livePreview = useMemo(() => {
+    if (!previewRow) return null
+    return rows.find((row) => row.id === previewRow.id) || previewRow
+  }, [previewRow, rows])
   const pendingCount = rows.filter((r) => r.status === 'PENDING').length
   const acceptedCount = rows.filter((r) => r.status === 'ACCEPTED').length
   const manualCount = rows.filter((r) => r.needsManualModeling).length
@@ -325,19 +387,30 @@ export function IfcImportPanel({
             ({list.length})
           </span>
         </h3>
-        <div className="border border-steel-border max-h-80 overflow-auto">
-          <DataTable compact>
+        <div className="border border-steel-border max-h-[min(28rem,50vh)] overflow-x-auto overflow-y-auto">
+          <DataTable compact className="w-full min-w-[980px]">
             <DataTable.Header>
               <DataTable.Row>
-                <DataTable.HeaderCell>Conf.</DataTable.HeaderCell>
-                <DataTable.HeaderCell>Name / GlobalId</DataTable.HeaderCell>
-                <DataTable.HeaderCell>Mark</DataTable.HeaderCell>
-                <DataTable.HeaderCell>Shape</DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right">L</DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right">T</DataTable.HeaderCell>
-                <DataTable.HeaderCell align="right">H</DataTable.HeaderCell>
-                <DataTable.HeaderCell>Status</DataTable.HeaderCell>
-                <DataTable.HeaderCell className="w-32" />
+                <DataTable.HeaderCell className="w-16">Conf.</DataTable.HeaderCell>
+                <DataTable.HeaderCell className="min-w-[9rem]">
+                  Name / GlobalId
+                </DataTable.HeaderCell>
+                <DataTable.HeaderCell className="min-w-[11rem]">
+                  Floor
+                </DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-20">Mark</DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-24">Shape</DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right" className="w-16">
+                  L
+                </DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right" className="w-16">
+                  T
+                </DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right" className="w-16">
+                  H
+                </DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-20">Status</DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-52">Actions</DataTable.HeaderCell>
               </DataTable.Row>
             </DataTable.Header>
             <DataTable.Body>
@@ -349,6 +422,9 @@ export function IfcImportPanel({
                 const pending = row.status === 'PENDING'
                 const canEditWall =
                   pending && row.entityType === 'IfcWall'
+                const canPreview =
+                  row.entityType === 'IfcWall' &&
+                  canPreviewWallSuggestion(row.mappedInstanceData)
                 return (
                   <DataTable.Row
                     key={row.id}
@@ -364,6 +440,7 @@ export function IfcImportPanel({
                     title={
                       [
                         ...(row.confidenceNotes || []),
+                        row.floorMatchNote || '',
                         row.skipReason || '',
                         incomplete && pending
                           ? `Need: ${missing.join(', ')}`
@@ -384,19 +461,56 @@ export function IfcImportPanel({
                       ) : null}
                     </DataTable.Cell>
                     <DataTable.Cell className="text-[11px]">
-                      <div className="text-ink">{row.name || '—'}</div>
-                      <div className="font-mono text-steel truncate max-w-[10rem]">
+                      <div className="text-ink truncate max-w-[11rem]">
+                        {row.name || '—'}
+                      </div>
+                      <div className="font-mono text-steel truncate max-w-[11rem]">
                         {row.sourceGlobalId}
                       </div>
                       {row.skipReason ? (
-                        <div className="text-[10px] text-amber-700 mt-0.5">
+                        <div className="text-[10px] text-amber-700 mt-0.5 line-clamp-2">
                           {row.skipReason}
                         </div>
                       ) : null}
                     </DataTable.Cell>
+                    <DataTable.Cell className="text-[11px]">
+                      <div className="mb-1 truncate text-steel" title={row.floorMatchNote}>
+                        <span className="text-ink">
+                          {row.sourceStorey?.name || 'No IFC storey'}
+                        </span>
+                        {row.sourceStorey?.elevationM != null
+                          ? ` · ${row.sourceStorey.elevationM}m`
+                          : ''}
+                      </div>
+                      <select
+                        className={`${inputCls} w-full max-w-[12rem]`}
+                        value={row.floorId || ''}
+                        disabled={!pending || busyId === row.id}
+                        title={row.floorMatchNote}
+                        onChange={(e) =>
+                          void onAssignFloor(row, e.target.value)
+                        }
+                      >
+                        <option value="">Assign floor…</option>
+                        {[...floors]
+                          .sort((a, b) => a.sortOrder - b.sortOrder)
+                          .map((floor) => (
+                            <option key={floor.id} value={floor.floorId}>
+                              {floor.label} ({floor.floorId})
+                            </option>
+                          ))}
+                      </select>
+                      <div
+                        className={`mt-1 text-[10px] capitalize ${
+                          row.floorId ? 'text-steel' : 'text-amber-700'
+                        }`}
+                      >
+                        {row.floorMatchStatus.replaceAll('_', ' ').toLowerCase()}
+                      </div>
+                    </DataTable.Cell>
                     <DataTable.Cell>
                       <input
-                        className={`${inputCls} w-16 font-mono`}
+                        className={`${inputCls} w-14 font-mono`}
                         placeholder="auto"
                         value={row.mappedInstanceData?.mark || ''}
                         disabled={!canEditWall}
@@ -410,7 +524,7 @@ export function IfcImportPanel({
                     <DataTable.Cell>
                       {canEditWall ? (
                         <select
-                          className={`${inputCls} font-mono`}
+                          className={`${inputCls} w-[5.5rem] font-mono`}
                           value={row.mappedInstanceData?.shape || ''}
                           onChange={(e) =>
                             patchLocal(row.id, {
@@ -432,7 +546,7 @@ export function IfcImportPanel({
                       <input
                         type="number"
                         step="0.01"
-                        className={`${inputCls} w-16 text-right font-mono`}
+                        className={`${inputCls} w-14 text-right font-mono`}
                         value={geoVal(row.mappedInstanceData, 'length')}
                         disabled={
                           !canEditWall ||
@@ -447,7 +561,7 @@ export function IfcImportPanel({
                       <input
                         type="number"
                         step="0.001"
-                        className={`${inputCls} w-16 text-right font-mono`}
+                        className={`${inputCls} w-14 text-right font-mono`}
                         value={geoVal(row.mappedInstanceData, 'thickness')}
                         disabled={!canEditWall}
                         onChange={(e) =>
@@ -459,7 +573,7 @@ export function IfcImportPanel({
                       <input
                         type="number"
                         step="0.01"
-                        className={`${inputCls} w-16 text-right font-mono`}
+                        className={`${inputCls} w-14 text-right font-mono`}
                         value={geoVal(row.mappedInstanceData, 'height')}
                         disabled={!canEditWall}
                         onChange={(e) =>
@@ -471,35 +585,56 @@ export function IfcImportPanel({
                       {row.status}
                     </DataTable.Cell>
                     <DataTable.Cell>
-                      {pending ? (
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            className="text-[11px] text-ink underline disabled:opacity-40"
-                            disabled={
-                              busyId === row.id || row.entityType !== 'IfcWall'
-                            }
-                            title={
-                              incomplete
-                                ? `Fill ${missing.join(', ')} first`
-                                : 'Create schedule instance'
-                            }
-                            onClick={() => void onAccept(row)}
-                          >
-                            {busyId === row.id ? '…' : 'Accept'}
-                          </button>
-                          <button
-                            type="button"
-                            className="text-[11px] text-danger underline disabled:opacity-40"
-                            disabled={busyId === row.id}
-                            onClick={() => void onReject(row)}
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-steel">—</span>
-                      )}
+                      <div className="flex flex-nowrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          className={`${actionBtn} border-steel-border bg-bg text-ink hover:border-chalk hover:text-chalk`}
+                          disabled={!canPreview}
+                          title={
+                            canPreview
+                              ? low
+                                ? '3D preview (LOW — amber outline)'
+                                : '3D preview of mapped geometry'
+                              : 'Need shape + dimensions to preview'
+                          }
+                          onClick={() => setPreviewRow(row)}
+                        >
+                          Preview
+                        </button>
+                        {pending ? (
+                          <>
+                            <button
+                              type="button"
+                              className={`${actionBtn} border-signal/40 bg-signal text-bg hover:brightness-110`}
+                              disabled={
+                                busyId === row.id ||
+                                row.entityType !== 'IfcWall' ||
+                                !row.floorId
+                              }
+                              title={
+                                !row.floorId
+                                  ? 'Assign a project floor first'
+                                  : incomplete
+                                    ? `Fill ${missing.join(', ')} first`
+                                    : 'Create schedule instance'
+                              }
+                              onClick={() => void onAccept(row)}
+                            >
+                              {busyId === row.id ? '…' : 'Accept'}
+                            </button>
+                            <button
+                              type="button"
+                              className={`${actionBtn} border-danger/50 bg-danger-bg text-danger hover:border-danger`}
+                              disabled={busyId === row.id}
+                              onClick={() => void onReject(row)}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-steel">—</span>
+                        )}
+                      </div>
                     </DataTable.Cell>
                   </DataTable.Row>
                 )
@@ -530,9 +665,9 @@ export function IfcImportPanel({
         Import from IFC
       </GhostButton>
 
-      <Modal open={open} title="Import from IFC — review" onClose={close} size="xl">
+      <Modal open={open} title="Import from IFC — review" onClose={close} size="full">
         <div className="space-y-4">
-          <p className="text-xs text-steel leading-relaxed">
+          <p className="text-xs text-steel leading-relaxed max-w-4xl">
             Upload runs the IFC parser in the background. Walls are mapped when
             possible; slabs and skipped entities are listed for{' '}
             <span className="text-ink">manual modeling</span>. Accept creates a
@@ -577,8 +712,11 @@ export function IfcImportPanel({
             <>
               <div className="flex flex-wrap gap-3 text-xs text-steel">
                 <span>
-                  {job.fileName} · floor{' '}
-                  <span className="font-mono text-ink">{floorId}</span>
+                  {job.fileName} ·{' '}
+                  <span className="font-mono text-ink">
+                    {rows.filter((row) => row.floorId).length}/{rows.length}
+                  </span>{' '}
+                  assigned to project floors
                 </span>
                 <span>
                   {rows.length} suggestions · {pendingCount} pending ·{' '}
@@ -598,11 +736,35 @@ export function IfcImportPanel({
                 </p>
               ) : (
                 <div className="space-y-5">
-                  {renderGroup('Walls', grouped.walls)}
-                  {renderGroup(
-                    'Slabs (manual modeling)',
-                    grouped.slabs,
-                  )}
+                  {floorGroups.map((group) => {
+                    const walls = group.rows.filter(
+                      (row) => row.entityType === 'IfcWall',
+                    )
+                    const slabs = group.rows.filter(
+                      (row) => row.entityType === 'IfcSlab',
+                    )
+                    return (
+                      <section
+                        key={group.key}
+                        className="space-y-3 border-t border-steel-border pt-4 first:border-t-0 first:pt-0"
+                      >
+                        <h2
+                          className={`font-display text-sm font-semibold ${
+                            group.key === '__unassigned__'
+                              ? 'text-amber-700'
+                              : 'text-ink'
+                          }`}
+                        >
+                          {group.title}{' '}
+                          <span className="font-mono text-xs font-normal text-steel">
+                            {group.rows.length}
+                          </span>
+                        </h2>
+                        {renderGroup('Walls', walls)}
+                        {renderGroup('Slabs (manual modeling)', slabs)}
+                      </section>
+                    )
+                  })}
                 </div>
               )}
             </>
@@ -614,6 +776,61 @@ export function IfcImportPanel({
             </PrimaryButton>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!livePreview}
+        title={
+          livePreview
+            ? `3D preview — ${livePreview.name || livePreview.sourceGlobalId}`
+            : '3D preview'
+        }
+        onClose={() => setPreviewRow(null)}
+        size="lg"
+        layer={1}
+      >
+        {livePreview?.mappedInstanceData ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-steel">
+              <span
+                className={`font-mono ${
+                  livePreview.confidence === 'LOW'
+                    ? 'font-semibold text-amber-700'
+                    : 'text-ink'
+                }`}
+              >
+                {livePreview.confidence}
+              </span>
+              {livePreview.confidence === 'LOW' ? (
+                <span className="text-amber-700">
+                  Amber outline marks LOW confidence
+                </span>
+              ) : (
+                <span>Mapped geometry · drag to orbit · scroll to zoom</span>
+              )}
+              {livePreview.mappedInstanceData.shape === 'LINEAR' ? (
+                <span className="font-mono text-ink">
+                  L {geoVal(livePreview.mappedInstanceData, 'length')} · T{' '}
+                  {geoVal(livePreview.mappedInstanceData, 'thickness')} · H{' '}
+                  {geoVal(livePreview.mappedInstanceData, 'height')}
+                </span>
+              ) : (
+                <span className="font-mono text-ink">
+                  R {geoVal(livePreview.mappedInstanceData, 'radius')} · ∠{' '}
+                  {geoVal(livePreview.mappedInstanceData, 'arcAngleDeg')}° · T{' '}
+                  {geoVal(livePreview.mappedInstanceData, 'thickness')} · H{' '}
+                  {geoVal(livePreview.mappedInstanceData, 'height')}
+                </span>
+              )}
+            </div>
+            <IfcWallPreviewViewport
+              key={livePreview.id}
+              mapped={livePreview.mappedInstanceData}
+              confidence={livePreview.confidence}
+              className="h-80 w-full"
+            />
+          </div>
+        ) : null}
       </Modal>
     </>
   )

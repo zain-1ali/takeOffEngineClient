@@ -18,17 +18,19 @@ export function Modal({
   children: ReactNode
   wide?: boolean
   /** Prefer `size` over `wide`. `wide` maps to `lg` for older call sites. */
-  size?: 'md' | 'lg' | 'xl'
+  size?: 'md' | 'lg' | 'xl' | 'full'
   closeOnEscape?: boolean
   layer?: number
 }) {
   const resolvedSize = wide && size === 'md' ? 'lg' : size
   const widthCls =
-    resolvedSize === 'xl'
-      ? 'w-full max-w-4xl'
-      : resolvedSize === 'lg'
-        ? 'w-full max-w-2xl'
-        : 'w-full max-w-lg'
+    resolvedSize === 'full'
+      ? 'w-[min(96vw,1400px)]'
+      : resolvedSize === 'xl'
+        ? 'w-full max-w-4xl'
+        : resolvedSize === 'lg'
+          ? 'w-full max-w-2xl'
+          : 'w-full max-w-lg'
   const zCls = layer > 0 ? 'z-[60]' : 'z-50'
 
   useEffect(() => {

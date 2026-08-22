@@ -378,7 +378,7 @@ export function ScheduleTab({
           {elementKey === 'WALLS' && (
             <IfcImportPanel
               projectId={projectId}
-              floorId={floorId}
+              floors={floors}
               onCommitted={invalidate}
             />
           )}
