@@ -303,7 +303,7 @@ export function SheetViewer({
       return;
     }
 
-    let crossOrigin: string | boolean = false;
+    let crossOrigin: false | "Anonymous" | "use-credentials" = false;
     try {
       const imageOrigin = new URL(imageUrl, window.location.href).origin;
       if (imageOrigin !== window.location.origin) {
