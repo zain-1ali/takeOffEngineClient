@@ -1,5 +1,6 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
+import { resolveMediaUrl } from "../lib/api";
 import type { Sheet } from "../types/models";
 
 const SUGGESTED_DISCIPLINES = [
@@ -21,7 +22,7 @@ interface SheetNavigatorProps {
 }
 
 function thumbUrl(sheet: Sheet): string {
-  return sheet.thumbnailFileUrl || sheet.originalFileUrl;
+  return resolveMediaUrl(sheet.thumbnailFileUrl || sheet.originalFileUrl);
 }
 
 function isExtracting(sheet: Sheet): boolean {

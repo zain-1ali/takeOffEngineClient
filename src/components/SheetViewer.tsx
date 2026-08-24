@@ -303,10 +303,21 @@ export function SheetViewer({
       return;
     }
 
+    let crossOrigin: string | boolean = false;
+    try {
+      const imageOrigin = new URL(imageUrl, window.location.href).origin;
+      if (imageOrigin !== window.location.origin) {
+        crossOrigin = "Anonymous";
+      }
+    } catch {
+      crossOrigin = false;
+    }
+
     const viewer = OpenSeadragon({
       element,
       prefixUrl: "/openseadragon/images/",
       tileSources: { type: "image", url: imageUrl },
+      crossOriginPolicy: crossOrigin,
       showNavigator: true,
       navigatorPosition: "BOTTOM_RIGHT",
       animationTime: 0.25,

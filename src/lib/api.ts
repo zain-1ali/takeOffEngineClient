@@ -26,6 +26,19 @@ export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 const TOKEN_KEY = 'takeoff_auth_token'
 
+/**
+ * Page PNGs live on the API host (`/uploads/...`). Locally Vite proxies that
+ * path; in production the SPA origin has no such files, so prefix the API base.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  if (/^https?:\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url
+  }
+  const path = url.startsWith('/') ? url : `/${url}`
+  return `${API_BASE_URL}${path}`
+}
+
 export function getAccessToken(): string | null {
   try {
     return sessionStorage.getItem(TOKEN_KEY)

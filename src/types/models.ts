@@ -33,6 +33,7 @@ export interface Sheet {
   name: string;
   originalFileUrl: string;
   thumbnailFileUrl: string | null;
+  sourcePdfUrl: string | null;
   pageNumber: number;
   discipline: string;
   sortOrder: number;

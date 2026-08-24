@@ -29,6 +29,7 @@ import {
   type PromotionSourceKind,
 } from '../api/blueprintPromotions'
 import { getProject } from '../api/projectsApi'
+import { resolveMediaUrl } from '../lib/api'
 import { SheetViewer } from '../components/SheetViewer'
 import { TakeoffSidebar } from '../components/TakeoffSidebar'
 import { LayersPanel } from '../components/LayersPanel'
@@ -1628,7 +1629,7 @@ export default function SheetViewerPage() {
                 </div>
               ) : null}
               <SheetViewer
-                imageUrl={sheet.originalFileUrl}
+                imageUrl={resolveMediaUrl(sheet.originalFileUrl)}
                 className="h-full w-full"
                 layers={layers}
                 tool={activeTool}
