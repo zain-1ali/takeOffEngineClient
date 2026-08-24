@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getProject, listInstances } from '../api/projectsApi'
 import { useAuth } from '../auth/AuthContext'
@@ -142,6 +142,18 @@ export default function WorkspacePage() {
                 Master takeoff mapping — units, rules, materials, NRM2, overlap
               </span>
             )}
+            <Link
+              to={`/projects/${projectId}/sheets`}
+              className="ml-auto font-display text-xs font-bold tracking-wide text-chalk uppercase hover:text-ink"
+            >
+              Drawings
+            </Link>
+            <Link
+              to={`/projects/${projectId}/quantity-takeoff`}
+              className="font-display text-xs font-bold tracking-wide text-chalk uppercase hover:text-ink"
+            >
+              QTO table
+            </Link>
           </div>
 
           {!showProjectReports && !showElementRegister && (

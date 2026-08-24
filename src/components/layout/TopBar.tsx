@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { FLOW_STEPS, type FlowStepId } from '../../constants/elementTree'
 import { AutosaveStatusLabel, useAutosave } from '../../autosave/AutosaveContext'
 import { GhostButton } from '../ui'
@@ -64,6 +65,18 @@ export function TopBar({
             Save
           </GhostButton>
           <ThemeToggle />
+          <Link
+            to={`/projects/${project.id}/sheets`}
+            className="text-xs text-steel hover:text-ink"
+          >
+            Drawings
+          </Link>
+          <Link
+            to={`/projects/${project.id}/quantity-takeoff`}
+            className="text-xs text-steel hover:text-ink"
+          >
+            QTO table
+          </Link>
           <button
             type="button"
             onClick={() => {

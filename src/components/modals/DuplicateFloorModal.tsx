@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { duplicateFloor, listInstances } from '../../api/projectsApi'
+import { duplicateFloor, listInstances, type DuplicateFloorResult } from '../../api/projectsApi'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import type { Floor } from '../../types/api'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { Field, Modal, inputClass } from './Modal'
 
-type TargetMode = 'new' | 'existing'
+type TargetMode = 'new' | 'existing' | 'same'
 
 export function DuplicateFloorModal({
   open,
@@ -18,6 +18,7 @@ export function DuplicateFloorModal({
   /** Selected-instance mode when set (non-empty). */
   instanceIds,
   title,
+  onCopied,
 }: {
   open: boolean
   onClose: () => void
@@ -26,6 +27,7 @@ export function DuplicateFloorModal({
   sourceFloorId?: string
   instanceIds?: string[]
   title?: string
+  onCopied?: (result: DuplicateFloorResult) => void
 }) {
   const qc = useQueryClient()
   const { runImmediate } = useAutosave()
@@ -42,9 +44,7 @@ export function DuplicateFloorModal({
   const [emptyFloorIds, setEmptyFloorIds] = useState<string[]>([])
 
   const candidateFloors = useMemo(() => {
-    if (selectedMode) {
-      return floors.filter((f) => f.floorId !== sourceFloorId)
-    }
+    if (selectedMode) return floors
     return floors.filter(
       (f) => f.floorId !== sourceFloorId && emptyFloorIds.includes(f.floorId),
     )
@@ -104,7 +104,10 @@ export function DuplicateFloorModal({
             : { sourceFloorId: sourceFloorId! }),
           ...(targetMode === 'new'
             ? { newFloor: draft }
-            : { targetFloorId: existingFloorId }),
+            : {
+                targetFloorId:
+                  targetMode === 'same' ? sourceFloorId : existingFloorId,
+              }),
         }),
       ),
     onSuccess: async (res) => {
@@ -113,10 +116,14 @@ export function DuplicateFloorModal({
       await qc.invalidateQueries({ queryKey: ['calculate', projectId] })
       await qc.invalidateQueries({ queryKey: ['instance-counts', projectId] })
       await qc.invalidateQueries({ queryKey: ['reports', projectId] })
+      onCopied?.(res)
       onClose()
-      alert(
-        `Copied ${res.copiedCount} instance${res.copiedCount === 1 ? '' : 's'} to ${res.targetFloorId}. Quantities recalculated on the target floor.`,
-      )
+      const sameFloor = res.targetFloorId === sourceFloorId
+      if (!sameFloor) {
+        alert(
+          `Copied ${res.copiedCount} instance${res.copiedCount === 1 ? '' : 's'} to ${res.targetFloorId}. Quantities recalculated on the target floor.`,
+        )
+      }
     },
     onError: (e: unknown) => {
       setError(e instanceof Error ? e.message : 'Duplication failed')
@@ -127,7 +134,9 @@ export function DuplicateFloorModal({
     (selectedMode ? (instanceIds?.length ?? 0) > 0 : Boolean(sourceFloorId)) &&
     (targetMode === 'new'
       ? Boolean(draft.floorId.trim() && draft.label.trim())
-      : Boolean(existingFloorId))
+      : targetMode === 'same'
+        ? Boolean(sourceFloorId)
+        : Boolean(existingFloorId))
 
   return (
     <Modal
@@ -137,14 +146,14 @@ export function DuplicateFloorModal({
       layer={1}
     >
       <p className="text-xs text-steel mb-3">
-        Copies shape, geometry, grade/spec, reinforcement, and grid placement refs.
+        Copies shape, geometry, grade/spec, and reinforcement.
         Quantities are recalculated on the target (not copied).
         {selectedMode
-          ? ` ${instanceIds!.length} selected instance${instanceIds!.length === 1 ? '' : 's'}.`
+          ? ` ${instanceIds!.length} selected instance${instanceIds!.length === 1 ? '' : 's'}. Same-floor copies get a new mark (C1→C2) and a cleared grid ref.`
           : ` Source: ${sourceFloorId}. Target must be new or empty.`}
       </p>
 
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-3 flex-wrap">
         <GhostButton
           type="button"
           className={`!text-xs !py-1.5 ${targetMode === 'new' ? '!border-signal' : ''}`}
@@ -152,6 +161,15 @@ export function DuplicateFloorModal({
         >
           New floor
         </GhostButton>
+        {selectedMode ? (
+          <GhostButton
+            type="button"
+            className={`!text-xs !py-1.5 ${targetMode === 'same' ? '!border-signal' : ''}`}
+            onClick={() => setTargetMode('same')}
+          >
+            This floor
+          </GhostButton>
+        ) : null}
         <GhostButton
           type="button"
           className={`!text-xs !py-1.5 ${targetMode === 'existing' ? '!border-signal' : ''}`}
@@ -161,7 +179,13 @@ export function DuplicateFloorModal({
         </GhostButton>
       </div>
 
-      {targetMode === 'new' ? (
+      {targetMode === 'same' ? (
+        <p className="text-xs text-steel border border-steel-border bg-panel px-3 py-2">
+          Copies stay on {sourceFloorId}. Marks follow the existing prefix+number
+          convention. Grid intersections are not copied — you can place each copy
+          next, or leave it unplaced.
+        </p>
+      ) : targetMode === 'new' ? (
         <div className="grid grid-cols-2 gap-2">
           <Field label="New ID">
             <input
@@ -178,24 +202,22 @@ export function DuplicateFloorModal({
             />
           </Field>
           <Field label="Elevation">
-            <input
-              type="number"
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={draft.elevation}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, elevation: Number(e.target.value) }))
+              emptyValue={0}
+              onChange={(n) =>
+                setDraft((d) => ({ ...d, elevation: n ?? 0 }))
               }
             />
           </Field>
           <Field label="Height">
-            <input
-              type="number"
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={draft.height}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, height: Number(e.target.value) }))
+              emptyValue={0}
+              onChange={(n) =>
+                setDraft((d) => ({ ...d, height: n ?? 0 }))
               }
             />
           </Field>
@@ -211,6 +233,7 @@ export function DuplicateFloorModal({
             {candidateFloors.map((f) => (
               <option key={f.id} value={f.floorId}>
                 {f.floorId} — {f.label}
+                {f.floorId === sourceFloorId ? ' (this floor)' : ''}
               </option>
             ))}
           </select>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { GhostButton } from '../ui'
+import { GhostButton, NumericInput } from '../ui'
 import {
   DiaSelect,
   RebarGroupsEditorShell,
@@ -127,17 +127,18 @@ export function BarGroupsScheduleCell({
       </div>
       {draft.map((row, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2">
-          <input
-            type="number"
+          <NumericInput
             min={1}
             max={60}
-            step={1}
+            integer
+            emptyValue={0}
+            showError={false}
             className="w-16 border border-steel-border bg-bg px-1.5 py-1 text-xs font-mono text-ink"
             value={row.barCount}
             aria-label={`Bar count ${i + 1}`}
-            onChange={(e) => {
+            onChange={(n) => {
               const next = [...draft]
-              next[i] = { ...row, barCount: Number(e.target.value) || 0 }
+              next[i] = { ...row, barCount: n ?? 0 }
               setDraft(next)
               setError('')
             }}

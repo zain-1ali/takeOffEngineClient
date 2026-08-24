@@ -5,6 +5,7 @@ import {
   createInstance,
   deleteInstance,
   listInstances,
+  updateInstance,
 } from '../../api/projectsApi'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import {
@@ -28,6 +29,7 @@ import type { Floor, Instance, Project } from '../../types/api'
 import { DuplicateFloorModal } from '../modals/DuplicateFloorModal'
 import { OpeningsTableModal } from '../modals/OpeningsTableModal'
 import { StairSegmentsModal } from '../modals/StairSegmentsModal'
+import { DataTable, GhostButton, NumericInput, PrimaryButton } from '../ui'
 import {
   BAR_GROUP_LEGACY,
   BarGroupsScheduleCell,
@@ -47,7 +49,6 @@ import {
   type PointPlacementResult,
   type SpanPlacementResult,
 } from '../modals/GridPlacementModal'
-import { DataTable, GhostButton, PrimaryButton } from '../ui'
 import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
 
@@ -182,15 +183,20 @@ function ScheduleInput({
   }
 
   return (
-    <input
-      type="number"
+    <NumericInput
       className={cls}
-      value={value === '' || value == null ? '' : Number(value)}
+      value={
+        value === '' || value == null || value === false || value === true
+          ? null
+          : Number(value)
+      }
       min={field.min}
       max={field.max}
-      step={field.step ?? (field.dec === 0 ? 1 : 0.05)}
+      integer={field.dec === 0}
+      allowEmpty
+      showError={false}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+      onChange={(n) => onChange(n == null ? '' : n)}
     />
   )
 }
@@ -216,6 +222,10 @@ export function ScheduleTab({
   } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [dupOpen, setDupOpen] = useState(false)
+  const [dupPlace, setDupPlace] = useState<{
+    mode: 'point' | 'span'
+    items: { id: string; mark: string; geometry: Record<string, unknown> }[]
+  } | null>(null)
 
   const instancesQuery = useQuery({
     queryKey: ['instances', projectId, floorId, elementKey],
@@ -435,6 +445,26 @@ export function ScheduleTab({
         sourceFloorId={floorId}
         instanceIds={[...selectedIds]}
         title="Duplicate selected to floor"
+        onCopied={(res) => {
+          if (res.targetFloorId !== floorId) return
+          const copies = res.instances.filter(
+            (inst) => inst.elementKey === elementKey,
+          )
+          const mode = POINT_PLACEMENT_KEYS.has(elementKey)
+            ? 'point'
+            : SPAN_PLACEMENT_KEYS.has(elementKey)
+              ? 'span'
+              : null
+          if (!mode || copies.length === 0) return
+          setDupPlace({
+            mode,
+            items: copies.map((inst) => ({
+              id: inst.id,
+              mark: inst.mark,
+              geometry: inst.geometry || {},
+            })),
+          })
+        }}
       />
 
       <GridPlacementModal
@@ -455,6 +485,51 @@ export function ScheduleTab({
               : spanGeometryPatch(elementKey, result)
           addMut.mutate({ shape: placement.shape, geometryPatch })
           setPlacement(null)
+        }}
+      />
+
+      <GridPlacementModal
+        key={dupPlace?.items[0]?.id}
+        open={!!dupPlace}
+        project={project}
+        mode={dupPlace?.mode || 'point'}
+        title={
+          dupPlace
+            ? dupPlace.mode === 'span'
+              ? `Length from grid for ${dupPlace.items[0]?.mark || 'copy'}${
+                  dupPlace.items.length > 1
+                    ? ` (${dupPlace.items.length} left)`
+                    : ''
+                }`
+              : `Place ${dupPlace.items[0]?.mark || 'copy'} at grid${
+                  dupPlace.items.length > 1
+                    ? ` (${dupPlace.items.length} left)`
+                    : ''
+                }`
+            : 'Place at grid intersection'
+        }
+        onClose={() => setDupPlace(null)}
+        cancelLabel="Leave unplaced"
+        confirmLabel={dupPlace?.mode === 'span' ? 'Use grid length' : 'Place copy'}
+        onConfirm={(result) => {
+          if (!dupPlace) return
+          const [current, ...rest] = dupPlace.items
+          const geometryPatch =
+            result.mode === 'point'
+              ? pointGeometryPatch(result)
+              : spanGeometryPatch(elementKey, result)
+          void runImmediate(() =>
+            updateInstance(projectId, current.id, {
+              geometry: { ...current.geometry, ...geometryPatch },
+            }),
+          ).then(() => {
+            invalidate()
+            if (rest.length) {
+              setDupPlace({ mode: dupPlace.mode, items: rest })
+            } else {
+              setDupPlace(null)
+            }
+          })
         }}
       />
 
@@ -902,13 +977,15 @@ function InstanceRow({
         )}
       </DataTable.Cell>
       <DataTable.Cell className="w-14">
-        <input
-          type="number"
+        <NumericInput
           min={1}
+          integer
+          emptyValue={1}
+          showError={false}
           className={fieldCls}
           value={local.count}
-          onChange={(e) => {
-            const count = Math.max(1, Number(e.target.value) || 1)
+          onChange={(n) => {
+            const count = Math.max(1, n ?? 1)
             setLocal((l) => ({ ...l, count }))
             onPatch({ count })
           }}

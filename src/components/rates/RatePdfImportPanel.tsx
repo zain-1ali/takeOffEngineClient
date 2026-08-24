@@ -13,7 +13,7 @@ import type {
   RateSuggestionStatus,
 } from '../../types/ratePdfImport'
 import { Modal } from '../modals/Modal'
-import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import { DataTable, GhostButton, NumericInput, PrimaryButton } from '../ui'
 
 const inputCls =
   'border border-steel-border bg-bg px-1.5 py-1 text-xs text-ink outline-none'
@@ -291,15 +291,16 @@ export function RatePdfImportPanel({
                             />
                           </DataTable.Cell>
                           <DataTable.Cell className="text-right">
-                            <input
-                              type="number"
-                              step="0.01"
+                            <NumericInput
                               className={`${inputCls} w-24 text-right font-mono`}
                               value={row.unitCost}
+                              emptyValue={0}
+                              min={0}
+                              showError={false}
                               disabled={row.status === 'REJECTED'}
-                              onChange={(e) =>
+                              onChange={(n) =>
                                 patchRow(row.id, {
-                                  unitCost: parseFloat(e.target.value) || 0,
+                                  unitCost: n ?? 0,
                                 })
                               }
                             />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import { GridPreview } from '../../grid/GridPreview'
 import type { AxisLine, Project } from '../../types/api'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { Modal, inputClass } from './Modal'
 
 function AxisEditor({
@@ -28,19 +28,21 @@ function AxisEditor({
                 onChange(next)
               }}
             />
-            <input
-              type="number"
-              step={0.1}
-              className={`${inputClass} flex-1`}
-              value={a.spacing}
-              onChange={(e) => {
-                const next = axes.map((x, j) =>
-                  j === i ? { ...x, spacing: Number(e.target.value) } : x,
-                )
-                onChange(next)
-              }}
-              title="Centre-to-centre spacing (m)"
-            />
+            <div className="min-w-0 flex-1">
+              <NumericInput
+                className={`${inputClass} w-full`}
+                value={a.spacing}
+                emptyValue={0}
+                min={0}
+                title="Centre-to-centre spacing (m)"
+                onChange={(n) => {
+                  const next = axes.map((x, j) =>
+                    j === i ? { ...x, spacing: n ?? 0 } : x,
+                  )
+                  onChange(next)
+                }}
+              />
+            </div>
             <button
               type="button"
               className="text-xs text-danger px-1"

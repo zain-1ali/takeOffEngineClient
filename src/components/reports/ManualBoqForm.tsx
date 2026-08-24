@@ -16,7 +16,7 @@ import type {
   ManualBoqLinkKind,
 } from '../../types/manualBoq'
 import { Field, inputClass } from '../modals/Modal'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 
 type RateOption = {
   key: string
@@ -218,13 +218,12 @@ export function ManualBoqForm({
                 </datalist>
               </Field>
               <Field label="Quantity">
-                <input
-                  type="number"
+                <NumericInput
                   min={0}
-                  step={0.01}
                   className={inputClass}
                   value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  emptyValue={0}
+                  onChange={(n) => setQuantity(n ?? 0)}
                 />
               </Field>
             </div>
@@ -277,16 +276,13 @@ export function ManualBoqForm({
 
           {!selected && (
             <Field label={`Unit rate (${project.currency})`}>
-              <input
-                type="number"
+              <NumericInput
                 min={0}
-                step="any"
                 className={inputClass}
-                value={unitRate}
-                onChange={(e) =>
-                  setUnitRate(e.target.value === '' ? '' : Number(e.target.value))
-                }
+                value={unitRate === '' ? null : unitRate}
+                allowEmpty
                 placeholder="Required for priced Cost Plan / BOQ amount"
+                onChange={(n) => setUnitRate(n == null ? '' : n)}
               />
             </Field>
           )}
@@ -328,17 +324,12 @@ export function ManualBoqForm({
             {labourMode === 'outputRate' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                 <Field label="Output rate (units per day)">
-                  <input
-                    type="number"
+                  <NumericInput
                     min={0.01}
-                    step={0.1}
                     className={inputClass}
-                    value={outputPerDay}
-                    onChange={(e) =>
-                      setOutputPerDay(
-                        e.target.value === '' ? '' : Number(e.target.value),
-                      )
-                    }
+                    value={outputPerDay === '' ? null : outputPerDay}
+                    allowEmpty
+                    onChange={(n) => setOutputPerDay(n == null ? '' : n)}
                   />
                 </Field>
                 <Field label="Gang / trade description">

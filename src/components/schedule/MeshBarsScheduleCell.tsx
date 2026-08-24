@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { GhostButton } from '../ui'
+import { GhostButton, NumericInput } from '../ui'
 import {
   DiaSelect,
   RebarGroupsEditorShell,
@@ -191,17 +191,17 @@ export function MeshBarsScheduleCell({
               setError('')
             }}
           />
-          <input
-            type="number"
+          <NumericInput
             min={50}
             max={500}
-            step={25}
+            emptyValue={0}
+            showError={false}
             className="w-20 border border-steel-border bg-bg px-1.5 py-1 text-xs font-mono text-ink"
             value={row.spacingMm}
             aria-label={`Spacing mm ${i + 1}`}
-            onChange={(e) => {
+            onChange={(n) => {
               const next = [...draft]
-              next[i] = { ...row, spacingMm: Number(e.target.value) || 0 }
+              next[i] = { ...row, spacingMm: n ?? 0 }
               setDraft(next)
               setError('')
             }}

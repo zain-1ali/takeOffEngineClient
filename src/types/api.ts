@@ -155,8 +155,15 @@ export type Instance = {
   spec: string | null
   /** UniFormat location (Walls / Slabs / Doors / Wall finishes). */
   location: string | null
-  source?: 'MANUAL' | 'IFC_IMPORT' | null
+  source?:
+    | 'MANUAL'
+    | 'IFC_IMPORT'
+    | 'BLUEPRINT_TRACE'
+    | 'BLUEPRINT_AI_SUGGESTION'
+    | null
   sourceGlobalId?: string | null
+  sourceTakeoffItemId?: string | null
+  sourceAiSuggestionId?: string | null
   createdAt?: string
   updatedAt?: string
 }

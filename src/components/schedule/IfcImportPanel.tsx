@@ -15,7 +15,7 @@ import type {
   IfcSuggestion,
 } from '../../types/ifcImport'
 import { Modal } from '../modals/Modal'
-import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import { DataTable, GhostButton, NumericInput, PrimaryButton } from '../ui'
 import {
   applySuggestionGeoPatch,
   defaultMappedElementKey,
@@ -409,16 +409,21 @@ export function IfcImportPanel({
   ) {
     const key = geoUiKey(row, uiKey)
     const canEdit = row.status === 'PENDING'
+    const raw = geoVal(row.mappedInstanceData, key)
+    const min =
+      opts.min != null && opts.min !== '' ? Number(opts.min) : undefined
     return (
-      <input
-        type="number"
-        step={opts.step || '0.01'}
-        min={opts.min}
+      <NumericInput
         data-geo-key={key}
         className={`${inputCls} w-14 text-right font-mono`}
-        value={geoVal(row.mappedInstanceData, key)}
+        value={raw === '' ? null : Number(raw)}
+        allowEmpty
+        min={Number.isFinite(min) ? min : undefined}
+        showError={false}
         disabled={!canEdit || geoInputDisabled(row, key, missing)}
-        onChange={(e) => patchGeo(row.id, key, e.target.value)}
+        onChange={(n) =>
+          patchGeo(row.id, key, n == null ? '' : String(n))
+        }
       />
     )
   }

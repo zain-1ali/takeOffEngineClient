@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { Modal } from './Modal'
 
 export type StairFlightDraft = {
@@ -247,23 +247,25 @@ export function StairSegmentsModal({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {(
                   [
-                    ['run', 'Run (m)'],
-                    ['rise', 'Rise (m)'],
-                    ['width', 'Width (m)'],
-                    ['stepCount', 'Steps'],
-                    ['waistThickness', 'Waist T (m)'],
-                    ['exposedSides', 'Exposed sides'],
+                    ['run', 'Run (m)', false],
+                    ['rise', 'Rise (m)', false],
+                    ['width', 'Width (m)', false],
+                    ['stepCount', 'Steps', true],
+                    ['waistThickness', 'Waist T (m)', false],
+                    ['exposedSides', 'Exposed sides', true],
                   ] as const
-                ).map(([key, lab]) => (
+                ).map(([key, lab, integer]) => (
                   <label key={key} className="text-[10px] text-steel">
                     {lab}
-                    <input
-                      type="number"
+                    <NumericInput
                       className={`${inputCls} mt-0.5`}
                       value={row[key]}
-                      onChange={(e) =>
+                      emptyValue={0}
+                      min={0}
+                      integer={integer}
+                      onChange={(n) =>
                         update(row.id, {
-                          [key]: parseFloat(e.target.value) || 0,
+                          [key]: n ?? 0,
                         } as Partial<StairFlightDraft>)
                       }
                     />
@@ -281,13 +283,14 @@ export function StairSegmentsModal({
                 ).map(([key, lab]) => (
                   <label key={key} className="text-[10px] text-steel">
                     {lab}
-                    <input
-                      type="number"
+                    <NumericInput
                       className={`${inputCls} mt-0.5`}
                       value={row[key]}
-                      onChange={(e) =>
+                      emptyValue={0}
+                      min={0}
+                      onChange={(n) =>
                         update(row.id, {
-                          [key]: parseFloat(e.target.value) || 0,
+                          [key]: n ?? 0,
                         } as Partial<StairLandingDraft>)
                       }
                     />
@@ -295,17 +298,15 @@ export function StairSegmentsModal({
                 ))}
                 <label className="text-[10px] text-steel">
                   Edge lm (blank = 2×(L+W))
-                  <input
-                    type="number"
+                  <NumericInput
                     className={`${inputCls} mt-0.5`}
-                    value={row.exposedEdgeLm}
+                    value={row.exposedEdgeLm === '' ? null : row.exposedEdgeLm}
+                    allowEmpty
+                    min={0}
                     placeholder="auto"
-                    onChange={(e) =>
+                    onChange={(n) =>
                       update(row.id, {
-                        exposedEdgeLm:
-                          e.target.value === ''
-                            ? ''
-                            : parseFloat(e.target.value) || 0,
+                        exposedEdgeLm: n == null ? '' : n,
                       })
                     }
                   />
@@ -331,13 +332,14 @@ export function StairSegmentsModal({
                     ).map(([key, lab]) => (
                       <label key={key} className="text-[10px] text-steel">
                         {lab}
-                        <input
-                          type="number"
+                        <NumericInput
                           className={`${inputCls} mt-0.5`}
                           value={row[key]}
-                          onChange={(e) =>
+                          emptyValue={0}
+                          min={0}
+                          onChange={(n) =>
                             update(row.id, {
-                              [key]: parseFloat(e.target.value) || 0,
+                              [key]: n ?? 0,
                             } as Partial<StairLandingDraft>)
                           }
                         />

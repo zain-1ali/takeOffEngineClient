@@ -22,7 +22,8 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 const TOKEN_KEY = 'takeoff_auth_token'
 
 export function getAccessToken(): string | null {

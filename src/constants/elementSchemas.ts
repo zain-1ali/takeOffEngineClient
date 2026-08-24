@@ -144,7 +144,7 @@ export const ELEMENT_SCHEMAS: Record<string, ElementSchema> = {
       topMainSpacing: 150,
       topDistDia: 16,
       topDistSpacing: 150,
-      startersEnabled: true,
+      startersEnabled: false,
       starterDia: 20,
       starterCount: 4,
       starterProjection: 0.75,

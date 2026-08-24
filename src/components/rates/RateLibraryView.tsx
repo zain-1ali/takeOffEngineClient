@@ -15,7 +15,7 @@ import type {
   RateResource,
 } from '../../types/rateLib'
 import { Modal } from '../modals/Modal'
-import { DataTable, GhostButton, PrimaryButton } from '../ui'
+import { DataTable, GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { RatePdfImportPanel } from './RatePdfImportPanel'
 
 type RaTab = 'buildups' | 'materials' | 'labour' | 'equipment' | 'methods'
@@ -563,12 +563,12 @@ function BuildupTable({
         <DataTable.Row key={`${group}-${i}`}>
           <DataTable.Cell className="text-xs">{l.desc}</DataTable.Cell>
           <DataTable.Cell>
-            <input
-              type="number"
-              step="0.001"
+            <NumericInput
               className={`${inputCls} w-20 text-right font-mono`}
               value={l.coeff}
-              onChange={(e) => onCoeff(group, i, parseFloat(e.target.value) || 0)}
+              emptyValue={0}
+              showError={false}
+              onChange={(n) => onCoeff(group, i, n ?? 0)}
             />
           </DataTable.Cell>
           <DataTable.Cell className="text-xs text-steel">{l.unit}</DataTable.Cell>
@@ -652,12 +652,13 @@ function BuildupTable({
             Overheads &amp; profit
           </DataTable.Cell>
           <DataTable.Cell className="text-right">
-            <input
-              type="number"
-              step={1}
+            <NumericInput
               className={`${inputCls} w-16 text-right font-mono`}
               value={Math.round((def.ohp || 0) * 100)}
-              onChange={(e) => onOhp(parseFloat(e.target.value) || 0)}
+              emptyValue={0}
+              min={0}
+              showError={false}
+              onChange={(n) => onOhp(n ?? 0)}
             />
             <span className="text-steel ml-1">%</span>
             <div className="font-mono text-steel mt-0.5 text-xs">
@@ -742,24 +743,24 @@ function LibraryTable({
                 />
               </DataTable.Cell>
               <DataTable.Cell className="text-right">
-                <input
-                  type="number"
-                  step="0.01"
+                <NumericInput
                   className={`${inputCls} w-24 text-right font-mono`}
                   value={r.rate}
-                  onChange={(e) => onPatch(i, 'rate', e.target.value)}
+                  emptyValue={0}
+                  min={0}
+                  showError={false}
+                  onChange={(n) => onPatch(i, 'rate', n ?? 0)}
                 />
               </DataTable.Cell>
               {isMat && (
                 <DataTable.Cell className="text-right">
-                  <input
-                    type="number"
-                    step={1}
+                  <NumericInput
                     className={`${inputCls} w-16 text-right font-mono`}
                     value={Math.round((r.wastage || 0) * 100)}
-                    onChange={(e) =>
-                      onPatch(i, 'wastage', (parseFloat(e.target.value) || 0) / 100)
-                    }
+                    emptyValue={0}
+                    min={0}
+                    showError={false}
+                    onChange={(n) => onPatch(i, 'wastage', (n ?? 0) / 100)}
                   />
                 </DataTable.Cell>
               )}

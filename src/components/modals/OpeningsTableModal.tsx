@@ -15,7 +15,7 @@ import {
   lengthToDisplay,
   type UnitSystem,
 } from '../../lib/units'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { Modal } from './Modal'
 
 const inputCls =
@@ -188,50 +188,50 @@ export function OpeningsTableModal({
                     </select>
                   </td>
                   <td className="px-2 py-1">
-                    <input
-                      type="number"
+                    <NumericInput
                       min={0}
-                      step={0.01}
                       className={`${inputCls} text-right`}
                       value={lengthToDisplay(row.width, unitSystem)}
-                      onChange={(e) => {
-                        const n = parseFloat(e.target.value)
+                      emptyValue={0}
+                      showError={false}
+                      onChange={(n) => {
                         updateRow(row.id, {
-                          width: Number.isFinite(n)
-                            ? lengthFromDisplay(n, unitSystem)
-                            : 0,
+                          width:
+                            n != null && Number.isFinite(n)
+                              ? lengthFromDisplay(n, unitSystem)
+                              : 0,
                         })
                       }}
                     />
                   </td>
                   <td className="px-2 py-1">
-                    <input
-                      type="number"
+                    <NumericInput
                       min={0}
-                      step={0.01}
                       className={`${inputCls} text-right`}
                       value={lengthToDisplay(row.height, unitSystem)}
-                      onChange={(e) => {
-                        const n = parseFloat(e.target.value)
+                      emptyValue={0}
+                      showError={false}
+                      onChange={(n) => {
                         updateRow(row.id, {
-                          height: Number.isFinite(n)
-                            ? lengthFromDisplay(n, unitSystem)
-                            : 0,
+                          height:
+                            n != null && Number.isFinite(n)
+                              ? lengthFromDisplay(n, unitSystem)
+                              : 0,
                         })
                       }}
                     />
                   </td>
                   <td className="px-2 py-1">
-                    <input
-                      type="number"
+                    <NumericInput
                       min={0}
-                      step={1}
+                      integer
                       className={`${inputCls} text-right`}
                       value={row.count}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value, 10)
+                      emptyValue={0}
+                      showError={false}
+                      onChange={(n) => {
                         updateRow(row.id, {
-                          count: Number.isFinite(n) ? Math.max(0, n) : 0,
+                          count: n != null && Number.isFinite(n) ? Math.max(0, n) : 0,
                         })
                       }}
                     />

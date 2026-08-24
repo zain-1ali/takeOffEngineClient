@@ -28,6 +28,8 @@ type Props = {
   project: Project
   mode: 'point' | 'span'
   title: string
+  cancelLabel?: string
+  confirmLabel?: string
   onConfirm: (result: PointPlacementResult | SpanPlacementResult) => void
 }
 
@@ -37,6 +39,8 @@ export function GridPlacementModal({
   project,
   mode,
   title,
+  cancelLabel = 'Cancel',
+  confirmLabel,
   onConfirm,
 }: Props) {
   const [selected, setSelected] = useState<GridSelection | null>(null)
@@ -132,7 +136,7 @@ export function GridPlacementModal({
       </div>
       <div className="mt-5 flex justify-end gap-2">
         <GhostButton className="!text-sm !py-1.5 !px-4" onClick={handleClose}>
-          Cancel
+          {cancelLabel}
         </GhostButton>
         <PrimaryButton
           className="!text-sm !py-1.5 !px-4"
@@ -161,7 +165,7 @@ export function GridPlacementModal({
             }
           }}
         >
-          {mode === 'point' ? 'Place instance' : 'Use grid length'}
+          {confirmLabel || (mode === 'point' ? 'Place instance' : 'Use grid length')}
         </PrimaryButton>
       </div>
     </Modal>

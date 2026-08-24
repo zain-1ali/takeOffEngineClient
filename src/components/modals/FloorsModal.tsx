@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFloor, deleteFloor } from '../../api/projectsApi'
 import { useAutosave } from '../../autosave/AutosaveContext'
 import type { Floor } from '../../types/api'
-import { PrimaryButton } from '../ui'
+import { NumericInput, PrimaryButton } from '../ui'
 import { DuplicateFloorModal } from './DuplicateFloorModal'
 import { Field, Modal, inputClass } from './Modal'
 
@@ -101,23 +101,21 @@ export function FloorsModal({
             />
           </Field>
           <Field label="Elevation">
-            <input
-              type="number"
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={draft.elevation}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, elevation: Number(e.target.value) }))
+              emptyValue={0}
+              onChange={(n) =>
+                setDraft((d) => ({ ...d, elevation: n ?? 0 }))
               }
             />
           </Field>
           <Field label="Height">
-            <input
-              type="number"
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={draft.height}
-              onChange={(e) => setDraft((d) => ({ ...d, height: Number(e.target.value) }))}
+              emptyValue={0}
+              onChange={(n) => setDraft((d) => ({ ...d, height: n ?? 0 }))}
             />
           </Field>
         </div>
@@ -180,26 +178,26 @@ function FloorRow({
         />
       </td>
       <td className="p-2 w-24">
-        <input
-          type="number"
-          step={0.1}
+        <NumericInput
           className={inputClass}
           value={elevation}
-          onChange={(e) => {
-            const v = Number(e.target.value)
+          emptyValue={0}
+          showError={false}
+          onChange={(n) => {
+            const v = n ?? 0
             setElevation(v)
             onPatch({ elevation: v })
           }}
         />
       </td>
       <td className="p-2 w-24">
-        <input
-          type="number"
-          step={0.1}
+        <NumericInput
           className={inputClass}
           value={height}
-          onChange={(e) => {
-            const v = Number(e.target.value)
+          emptyValue={0}
+          showError={false}
+          onChange={(n) => {
+            const v = n ?? 0
             setHeight(v)
             onPatch({ height: v })
           }}

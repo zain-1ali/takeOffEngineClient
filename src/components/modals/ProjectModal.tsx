@@ -10,7 +10,7 @@ import {
   type UnitSystem,
 } from '../../lib/units'
 import type { ConcreteMix, Project, ProjectMaterials } from '../../types/api'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { ConvertCurrencyModal } from './ConvertCurrencyModal'
 import { Field, Modal, inputClass } from './Modal'
 
@@ -236,83 +236,60 @@ export function ProjectModal({
           />
         </Field>
         <Field label="Gross Floor Area (m²)">
-          <input
-            type="number"
-            min={0}
-            step="any"
+          <NumericInput
             className={inputClass}
             placeholder="Optional — enables Rate/m² on Cost Plan"
-            value={form.gfaM2 ?? ''}
-            onChange={(e) => {
-              const raw = e.target.value
-              if (raw === '') {
-                set('gfaM2', null)
-                return
-              }
-              const n = Number(raw)
-              set('gfaM2', Number.isFinite(n) && n > 0 ? n : null)
-            }}
+            value={form.gfaM2}
+            allowEmpty
+            min={0}
+            onChange={(n) =>
+              set('gfaM2', n != null && n > 0 ? n : null)
+            }
           />
         </Field>
         <Field label="Design Allowance (%)">
-          <input
-            type="number"
-            min={0}
-            step="any"
+          <NumericInput
             className={inputClass}
             value={form.designAllowancePercent}
-            onChange={(e) =>
-              set(
-                'designAllowancePercent',
-                Math.max(0, Number(e.target.value) || 0),
-              )
-            }
+            emptyValue={0}
+            min={0}
+            onChange={(n) => set('designAllowancePercent', n ?? 0)}
           />
         </Field>
         <Field label="Overhead (%)">
-          <input
-            type="number"
-            min={0}
-            step="any"
+          <NumericInput
             className={inputClass}
             value={form.overheadPercent}
-            onChange={(e) =>
-              set('overheadPercent', Math.max(0, Number(e.target.value) || 0))
-            }
+            emptyValue={0}
+            min={0}
+            onChange={(n) => set('overheadPercent', n ?? 0)}
           />
         </Field>
         <Field label="Profit (%)">
-          <input
-            type="number"
-            min={0}
-            step="any"
+          <NumericInput
             className={inputClass}
             value={form.profitPercent}
-            onChange={(e) =>
-              set('profitPercent', Math.max(0, Number(e.target.value) || 0))
-            }
+            emptyValue={0}
+            min={0}
+            onChange={(n) => set('profitPercent', n ?? 0)}
           />
         </Field>
         <Field label="Inflation (%)">
-          <input
-            type="number"
-            min={0}
-            step="any"
+          <NumericInput
             className={inputClass}
             value={form.inflationPercent}
-            onChange={(e) =>
-              set('inflationPercent', Math.max(0, Number(e.target.value) || 0))
-            }
+            emptyValue={0}
+            min={0}
+            onChange={(n) => set('inflationPercent', n ?? 0)}
           />
         </Field>
         <Field label="Earthworks bulking / disposal (%)">
-          <input
-            type="number"
-            min={0}
-            step={1}
+          <NumericInput
             className={inputClass}
             value={earthworkBulkingPercent}
-            onChange={(e) => setBulkingPercent(Number(e.target.value) || 0)}
+            emptyValue={0}
+            min={0}
+            onChange={(n) => setBulkingPercent(n ?? 0)}
           />
         </Field>
       </div>
@@ -332,31 +309,29 @@ export function ProjectModal({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Vertical bracing rate (kg/m²)">
-            <input
-              type="number"
-              min={0}
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={materials.verticalBracingRate}
-              onChange={(e) =>
+              emptyValue={0}
+              min={0}
+              onChange={(n) =>
                 persistMaterials({
                   ...materials,
-                  verticalBracingRate: Math.max(0, Number(e.target.value) || 0),
+                  verticalBracingRate: n ?? 0,
                 })
               }
             />
           </Field>
           <Field label="Soffit prop rate (kg/m²)">
-            <input
-              type="number"
-              min={0}
-              step={0.1}
+            <NumericInput
               className={inputClass}
               value={materials.soffitPropRate}
-              onChange={(e) =>
+              emptyValue={0}
+              min={0}
+              onChange={(n) =>
                 persistMaterials({
                   ...materials,
-                  soffitPropRate: Math.max(0, Number(e.target.value) || 0),
+                  soffitPropRate: n ?? 0,
                 })
               }
             />
@@ -409,17 +384,14 @@ export function ProjectModal({
                       ] as const
                     ).map(([key, val]) => (
                       <td key={key} className="px-2 py-1 text-right">
-                        <input
-                          type="number"
-                          step={key === 'cement' || key === 'water' ? 1 : 0.01}
+                        <NumericInput
                           className={`${mixInputCls} w-[4.5rem] text-right`}
                           value={val}
-                          onChange={(e) =>
-                            setMixField(
-                              grade,
-                              key,
-                              parseFloat(e.target.value) || 0,
-                            )
+                          emptyValue={0}
+                          min={0}
+                          showError={false}
+                          onChange={(n) =>
+                            setMixField(grade, key, n ?? 0)
                           }
                         />
                       </td>
@@ -452,52 +424,49 @@ export function ProjectModal({
               />
             </Field>
             <Field label="Mortar fraction of masonry">
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
+              <NumericInput
                 className={inputClass}
                 value={materials.stoneMortarFraction}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                max={1}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
-                    stoneMortarFraction: parseFloat(e.target.value) || 0,
+                    stoneMortarFraction: n ?? 0,
                   })
                 }
               />
             </Field>
             <Field label="Cement bags per m³ mortar">
-              <input
-                type="number"
-                min={0}
-                step={0.1}
+              <NumericInput
                 className={inputClass}
                 value={materials.mortarMix.cementBagsPerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     mortarMix: {
                       ...materials.mortarMix,
-                      cementBagsPerM3: parseFloat(e.target.value) || 0,
+                      cementBagsPerM3: n ?? 0,
                     },
                   })
                 }
               />
             </Field>
             <Field label="Sand m³ per m³ mortar">
-              <input
-                type="number"
-                min={0}
-                step={0.05}
+              <NumericInput
                 className={inputClass}
                 value={materials.mortarMix.sandM3PerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     mortarMix: {
                       ...materials.mortarMix,
-                      sandM3PerM3: parseFloat(e.target.value) || 0,
+                      sandM3PerM3: n ?? 0,
                     },
                   })
                 }
@@ -515,36 +484,34 @@ export function ProjectModal({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Cement kg per m³ screed">
-              <input
-                type="number"
-                min={0}
-                step={1}
+              <NumericInput
                 className={inputClass}
                 value={materials.screedMix.cementKgPerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     screedMix: {
                       ...materials.screedMix,
-                      cementKgPerM3: parseFloat(e.target.value) || 0,
+                      cementKgPerM3: n ?? 0,
                     },
                   })
                 }
               />
             </Field>
             <Field label="Sand m³ per m³ screed">
-              <input
-                type="number"
-                min={0}
-                step={0.05}
+              <NumericInput
                 className={inputClass}
                 value={materials.screedMix.sandM3PerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     screedMix: {
                       ...materials.screedMix,
-                      sandM3PerM3: parseFloat(e.target.value) || 0,
+                      sandM3PerM3: n ?? 0,
                     },
                   })
                 }
@@ -562,36 +529,34 @@ export function ProjectModal({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Cement kg per m³ plaster">
-              <input
-                type="number"
-                min={0}
-                step={1}
+              <NumericInput
                 className={inputClass}
                 value={materials.plasterMix.cementKgPerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     plasterMix: {
                       ...materials.plasterMix,
-                      cementKgPerM3: parseFloat(e.target.value) || 0,
+                      cementKgPerM3: n ?? 0,
                     },
                   })
                 }
               />
             </Field>
             <Field label="Sand m³ per m³ plaster">
-              <input
-                type="number"
-                min={0}
-                step={0.05}
+              <NumericInput
                 className={inputClass}
                 value={materials.plasterMix.sandM3PerM3}
-                onChange={(e) =>
+                emptyValue={0}
+                min={0}
+                onChange={(n) =>
                   persistMaterials({
                     ...materials,
                     plasterMix: {
                       ...materials.plasterMix,
-                      sandM3PerM3: parseFloat(e.target.value) || 0,
+                      sandM3PerM3: n ?? 0,
                     },
                   })
                 }
