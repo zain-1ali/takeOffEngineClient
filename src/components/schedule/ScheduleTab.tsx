@@ -51,6 +51,13 @@ import {
 } from '../modals/GridPlacementModal'
 import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
+import {
+  MeasureSessionModal,
+  measureButtonTooltip,
+  type MeasureApplyPatch,
+} from '../MeasureSessionModal'
+import { fetchSheets } from '../../api/sheets'
+import { getMeasureTargets } from '../../constants/measureTraceableFields'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
@@ -226,12 +233,28 @@ export function ScheduleTab({
     mode: 'point' | 'span'
     items: { id: string; mark: string; geometry: Record<string, unknown> }[]
   } | null>(null)
+  const [measureInst, setMeasureInst] = useState<Instance | null>(null)
 
   const instancesQuery = useQuery({
     queryKey: ['instances', projectId, floorId, elementKey],
     queryFn: () => listInstances(projectId, { floorId, elementKey }),
     enabled: !!schema,
   })
+
+  const floorSheetsQuery = useQuery({
+    queryKey: ['projects', projectId, 'sheets', floorId],
+    queryFn: () => fetchSheets(projectId, floorId),
+    enabled: !!projectId && !!floorId,
+  })
+
+  const floorSheets = floorSheetsQuery.data ?? []
+  const hasFloorSheet = floorSheets.length > 0
+  const floorSheetCalibrated = floorSheets.some(
+    (s) =>
+      s.calibrationScale != null &&
+      s.calibrationScale > 0 &&
+      Boolean(s.calibrationUnit),
+  )
 
   const calcQuery = useQuery({
     queryKey: ['calculate', projectId, floorId, elementKey],
@@ -581,6 +604,7 @@ export function ScheduleTab({
                       {displayOutputLabel(c.label, c.unit, unitSystem)}
                     </DataTable.HeaderCell>
                   ))}
+                  <DataTable.HeaderCell className="w-16" />
                   <DataTable.HeaderCell className="w-10" />
                 </DataTable.Row>
               </DataTable.Header>
@@ -628,6 +652,7 @@ export function ScheduleTab({
                             </DataTable.Cell>
                           ))}
                           <DataTable.Cell className="!py-2" />
+                          <DataTable.Cell className="!py-2" />
                         </DataTable.Row>
                       )}
                       {group.instances.map((inst) => (
@@ -644,6 +669,13 @@ export function ScheduleTab({
                           selected={selectedIds.has(inst.id)}
                           onSelectedChange={(on) => toggleSelect(inst.id, on)}
                           onPatch={(patch) => schedulePatch(inst.id, patch)}
+                          measureDisabledReason={measureButtonTooltip(
+                            hasFloorSheet,
+                            floorSheetCalibrated,
+                            getMeasureTargets(inst.elementKey, inst.shape).length >
+                              0,
+                          )}
+                          onMeasure={() => setMeasureInst(inst)}
                           onDelete={() => {
                             if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
                           }}
@@ -671,6 +703,7 @@ export function ScheduleTab({
                                 : ''}
                             </DataTable.Cell>
                           ))}
+                          <DataTable.Cell className="!py-1.5" />
                           <DataTable.Cell className="!py-1.5" />
                         </DataTable.Row>
                       )}
@@ -700,12 +733,45 @@ export function ScheduleTab({
                     )
                   })}
                   <DataTable.Cell />
+                  <DataTable.Cell />
                 </DataTable.Row>
               </DataTable.Footer>
             </DataTable>
           </div>
         )}
       </div>
+
+      {measureInst ? (
+        <MeasureSessionModal
+          open
+          projectId={projectId}
+          floorId={floorId}
+          instance={measureInst}
+          onClose={() => setMeasureInst(null)}
+          onApply={(patch: MeasureApplyPatch) => {
+            const body: Record<string, unknown> = {}
+            if (patch.geometry) {
+              body.geometry = {
+                ...(measureInst.geometry || {}),
+                ...patch.geometry,
+              }
+            }
+            if (patch.count != null) body.count = patch.count
+            schedulePatch(measureInst.id, body)
+            setMeasureInst((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    count: patch.count ?? prev.count,
+                    geometry: patch.geometry
+                      ? { ...(prev.geometry || {}), ...patch.geometry }
+                      : prev.geometry,
+                  }
+                : prev,
+            )
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -722,6 +788,8 @@ function InstanceRow({
   selected = false,
   onSelectedChange,
   onPatch,
+  measureDisabledReason,
+  onMeasure,
   onDelete,
 }: {
   inst: Instance
@@ -735,6 +803,8 @@ function InstanceRow({
   selected?: boolean
   onSelectedChange?: (on: boolean) => void
   onPatch: (patch: Record<string, unknown>) => void
+  measureDisabledReason: string | null
+  onMeasure: () => void
   onDelete: () => void
 }) {
   const [local, setLocal] = useState(inst)
@@ -1308,6 +1378,17 @@ function InstanceRow({
           </DataTable.Cell>
         )
       })}
+      <DataTable.Cell>
+        <button
+          type="button"
+          className="text-xs text-chalk disabled:cursor-not-allowed disabled:text-steel/50"
+          title={measureDisabledReason ?? 'Open measurement session'}
+          disabled={Boolean(measureDisabledReason)}
+          onClick={onMeasure}
+        >
+          Measure
+        </button>
+      </DataTable.Cell>
       <DataTable.Cell>
         <button type="button" className="text-danger text-xs" onClick={onDelete}>
           ×

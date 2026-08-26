@@ -8,6 +8,7 @@ import { TopBar } from '../components/layout/TopBar'
 import { FloorsModal } from '../components/modals/FloorsModal'
 import { GridModal } from '../components/modals/GridModal'
 import { ProjectModal } from '../components/modals/ProjectModal'
+import { FloorDrawingBar } from '../components/FloorDrawingBar'
 import { ScheduleTab } from '../components/schedule/ScheduleTab'
 import { ModelTab } from '../components/model/ModelTab'
 import { ElementReportsTab } from '../components/reports/ElementReportsTab'
@@ -134,6 +135,7 @@ export default function WorkspacePage() {
                 ))}
               </select>
             </label>
+            <FloorDrawingBar projectId={projectId} floorId={currentFloorId} />
             {showProjectReports && (
               <span className="text-xs text-steel/70">Used when scope is “This floor”</span>
             )}
@@ -143,14 +145,8 @@ export default function WorkspacePage() {
               </span>
             )}
             <Link
-              to={`/projects/${projectId}/sheets`}
-              className="ml-auto font-display text-xs font-bold tracking-wide text-chalk uppercase hover:text-ink"
-            >
-              Drawings
-            </Link>
-            <Link
               to={`/projects/${projectId}/quantity-takeoff`}
-              className="font-display text-xs font-bold tracking-wide text-chalk uppercase hover:text-ink"
+              className="ml-auto font-display text-xs font-bold tracking-wide text-chalk uppercase hover:text-ink"
             >
               QTO table
             </Link>

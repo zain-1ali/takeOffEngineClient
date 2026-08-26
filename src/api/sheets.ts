@@ -3,6 +3,7 @@ import type { CalibrationUnitLabel, Sheet } from '../types/models'
 
 export interface UploadSheetsResponse {
   projectId: string
+  floorId?: string
   pageCount?: number
   fileCount?: number
   sheets?: Sheet[]
@@ -33,23 +34,27 @@ async function credentialedFetch(path: string, init: RequestInit): Promise<Respo
   })
 }
 
-export async function fetchSheets(projectId: string): Promise<Sheet[]> {
-  const data = await api<{ sheets: Sheet[] }>(`/api/projects/${projectId}/sheets`)
+export async function fetchSheets(
+  projectId: string,
+  floorId?: string,
+): Promise<Sheet[]> {
+  const q = floorId ? `?floorId=${encodeURIComponent(floorId)}` : ''
+  const data = await api<{ sheets: Sheet[] }>(
+    `/api/projects/${projectId}/sheets${q}`,
+  )
   return data.sheets
 }
 
-export async function uploadPdfs(
+/** Upload one PDF for a floor (replaces prior sheets on that floor). */
+export async function uploadFloorPdf(
   projectId: string,
-  files: File[],
-  discipline?: string,
+  floorId: string,
+  file: File,
 ): Promise<UploadSheetsResponse> {
   const formData = new FormData()
-  for (const file of files) {
-    formData.append('files', file)
-  }
-  if (discipline?.trim()) {
-    formData.append('discipline', discipline.trim())
-  }
+  formData.append('files', file)
+  formData.append('floorId', floorId)
+  formData.append('discipline', 'Structural')
 
   const response = await credentialedFetch(
     `/api/projects/${projectId}/sheets/upload`,
@@ -57,7 +62,7 @@ export async function uploadPdfs(
   )
   const text = await response.text()
   const data = (
-    text ? JSON.parse(text) : { projectId }
+    text ? JSON.parse(text) : { projectId, floorId }
   ) as UploadSheetsResponse & { error?: string }
   if (!response.ok) {
     throw new ApiError(response.status, data.error || `Request failed (${response.status})`)

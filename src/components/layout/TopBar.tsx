@@ -66,12 +66,6 @@ export function TopBar({
           </GhostButton>
           <ThemeToggle />
           <Link
-            to={`/projects/${project.id}/sheets`}
-            className="text-xs text-steel hover:text-ink"
-          >
-            Drawings
-          </Link>
-          <Link
             to={`/projects/${project.id}/quantity-takeoff`}
             className="text-xs text-steel hover:text-ink"
           >

@@ -30,6 +30,7 @@ export type AiExtractionStatus =
 export interface Sheet {
   id: string;
   projectId: string;
+  floorId: string | null;
   name: string;
   originalFileUrl: string;
   thumbnailFileUrl: string | null;

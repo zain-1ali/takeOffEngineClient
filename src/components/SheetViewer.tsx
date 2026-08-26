@@ -246,7 +246,9 @@ export function SheetViewer({
     }>
   >([]);
   const [markupDraft, setMarkupDraft] = useState<MarkupDraft | null>(null);
-  const [, setViewportTick] = useState(0);
+  const [viewportTick, setViewportTick] = useState(0);
+  /** Hold Space (or use Pan tool) to pan/zoom without drawing. */
+  const [spacePan, setSpacePan] = useState(false);
 
   draftPointsRef.current = draftPoints;
   markupDraftRef.current = markupDraft;
@@ -315,16 +317,17 @@ export function SheetViewer({
 
     const viewer = OpenSeadragon({
       element,
-      prefixUrl: "/openseadragon/images/",
-      tileSources: { type: "image", url: imageUrl },
-      crossOriginPolicy: crossOrigin,
+      // Custom HTML controls — OSD default PNGs are not shipped in the npm package.
+      showNavigationControl: false,
       showNavigator: true,
       navigatorPosition: "BOTTOM_RIGHT",
+      tileSources: { type: "image", url: imageUrl },
+      crossOriginPolicy: crossOrigin,
       animationTime: 0.25,
       blendTime: 0.1,
       constrainDuringPan: true,
-      maxZoomPixelRatio: 4,
-      minZoomImageRatio: 0.8,
+      maxZoomPixelRatio: 8,
+      minZoomImageRatio: 0.5,
       visibilityRatio: 0.5,
       zoomPerScroll: 1.2,
       gestureSettingsMouse: {
@@ -332,12 +335,20 @@ export function SheetViewer({
         dblClickToZoom: false,
         pinchToZoom: true,
         flickEnabled: true,
+        scrollToZoom: true,
+        dragToPan: true,
       },
       gestureSettingsTouch: {
         pinchToZoom: true,
         flickEnabled: true,
         clickToZoom: false,
         dblClickToZoom: false,
+        dragToPan: true,
+        scrollToZoom: true,
+      },
+      gestureSettingsPen: {
+        dragToPan: true,
+        scrollToZoom: true,
       },
     });
 
@@ -386,20 +397,63 @@ export function SheetViewer({
   }, [aiRoomPins, projectAiRoomPins]);
 
   useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.code !== "Space" || event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setSpacePan(true);
+    }
+    function onKeyUp(event: KeyboardEvent): void {
+      if (event.code === "Space") setSpacePan(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", () => setSpacePan(false));
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) {
       return;
     }
 
-    const overlayActive = tool !== "pan" && !clickToLocate;
-    viewer.setMouseNavEnabled(!overlayActive && !clickToLocate);
-    if (!clickToLocate) {
-      setDraftPoints([]);
-      setDraftScreen([]);
-      setCursorScreen(null);
-      setMarkupDraft(null);
-      drawingRef.current = false;
+    // Space (or Pan tool) lets drag-pan reach OSD; Konva overlay otherwise
+    // captures clicks for measuring. Wheel zoom is forwarded from the Stage.
+    const allowOsdPan = tool === "pan" || spacePan;
+    viewer.setMouseNavEnabled(true);
+    const gestures = viewer as OpenSeadragon.Viewer & {
+      gestureSettingsMouse?: { dragToPan?: boolean; scrollToZoom?: boolean };
+      gestureSettingsTouch?: { dragToPan?: boolean; pinchToZoom?: boolean };
+    };
+    if (gestures.gestureSettingsMouse) {
+      gestures.gestureSettingsMouse.dragToPan = allowOsdPan;
+      gestures.gestureSettingsMouse.scrollToZoom = true;
     }
+    if (gestures.gestureSettingsTouch) {
+      gestures.gestureSettingsTouch.dragToPan = allowOsdPan;
+      gestures.gestureSettingsTouch.pinchToZoom = true;
+    }
+  }, [tool, spacePan]);
+
+  useEffect(() => {
+    if (clickToLocate) return;
+    setDraftPoints([]);
+    setDraftScreen([]);
+    setCursorScreen(null);
+    setMarkupDraft(null);
+    drawingRef.current = false;
   }, [tool, clickToLocate]);
 
   /** Escape cancels an in-progress click-trace without saving. */
@@ -651,6 +705,10 @@ export function SheetViewer({
     if (event.evt.detail > 1) {
       return;
     }
+    // Middle / right button — let the user pan (overlay ignores these).
+    if (event.evt.button === 1 || event.evt.button === 2 || spacePan) {
+      return;
+    }
 
     const viewer = viewerRef.current;
     if (!viewer || tool === "pan" || inputBlockedRef.current) {
@@ -764,8 +822,9 @@ export function SheetViewer({
     );
   }
 
-  const overlayActive = tool !== "pan" && !clickToLocate;
+  const overlayActive = tool !== "pan" && !clickToLocate && !spacePan;
   const viewer = viewerRef.current;
+  void viewportTick;
   let countMarkerIndex = 0;
 
   const draftColor =
@@ -813,6 +872,73 @@ export function SheetViewer({
       style={{ width: "100%", height: "100%" }}
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+
+      <div className="pointer-events-none absolute top-2 right-2 z-20 flex flex-col gap-1">
+        {(
+          [
+            {
+              label: "+",
+              title: "Zoom in",
+              action: () => {
+                const v = viewerRef.current;
+                if (!v?.viewport) return;
+                v.viewport.zoomBy(1.25);
+                v.viewport.applyConstraints();
+              },
+            },
+            {
+              label: "−",
+              title: "Zoom out",
+              action: () => {
+                const v = viewerRef.current;
+                if (!v?.viewport) return;
+                v.viewport.zoomBy(0.8);
+                v.viewport.applyConstraints();
+              },
+            },
+            {
+              label: "⌂",
+              title: "Fit to view",
+              action: () => {
+                const v = viewerRef.current;
+                if (!v?.viewport) return;
+                v.viewport.goHome(true);
+              },
+            },
+            {
+              label: "⛶",
+              title: "Toggle full page",
+              action: () => {
+                const v = viewerRef.current;
+                if (!v) return;
+                if (v.isFullPage()) v.setFullPage(false);
+                else v.setFullPage(true);
+              },
+            },
+          ] as const
+        ).map((btn) => (
+          <button
+            key={btn.title}
+            type="button"
+            title={btn.title}
+            aria-label={btn.title}
+            className="pointer-events-auto flex h-8 w-8 items-center justify-center border border-steel-border bg-panel/95 text-base font-semibold text-ink shadow-sm hover:bg-bg"
+            onClick={btn.action}
+          >
+            {btn.label}
+          </button>
+        ))}
+      </div>
+
+      {spacePan || tool === "pan" ? (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-20 border border-steel-border bg-panel/90 px-2 py-1 text-[10px] text-steel">
+          {spacePan ? "Space held — drag to pan · scroll to zoom" : "Pan mode · scroll to zoom"}
+        </div>
+      ) : overlayActive ? (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-20 border border-steel-border bg-panel/90 px-2 py-1 text-[10px] text-steel">
+          Hold Space to pan · scroll / pinch to zoom
+        </div>
+      ) : null}
 
       {clickToLocate ? (
         <button
@@ -911,13 +1037,46 @@ export function SheetViewer({
           height={size.height}
           className="absolute inset-0 z-10"
           style={{
-            cursor:
-              tool === "select"
+            cursor: spacePan
+              ? "grab"
+              : tool === "select"
                 ? "default"
                 : overlayActive
                   ? "crosshair"
-                  : "default",
+                  : "grab",
             pointerEvents: overlayActive ? "auto" : "none",
+          }}
+          onWheel={(event) => {
+            const osd = viewerRef.current;
+            if (!osd?.viewport) return;
+            event.evt.preventDefault();
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            // Trackpad two-finger horizontal → pan; vertical / pinch → zoom.
+            if (
+              !event.evt.ctrlKey &&
+              Math.abs(event.evt.deltaX) > Math.abs(event.evt.deltaY) &&
+              Math.abs(event.evt.deltaX) > 0
+            ) {
+              const delta = osd.viewport.deltaPointsFromPixels(
+                new OpenSeadragon.Point(-event.evt.deltaX, -event.evt.deltaY),
+              );
+              osd.viewport.panBy(delta);
+              osd.viewport.applyConstraints();
+              return;
+            }
+
+            const pixel = new OpenSeadragon.Point(
+              event.evt.clientX - rect.left,
+              event.evt.clientY - rect.top,
+            );
+            const factor = event.evt.deltaY > 0 ? 1 / 1.2 : 1.2;
+            osd.viewport.zoomBy(
+              factor,
+              osd.viewport.pointFromPixel(pixel, true),
+            );
+            osd.viewport.applyConstraints();
           }}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}

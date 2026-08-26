@@ -7,8 +7,6 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import DashboardPage from './pages/DashboardPage'
 import WorkspacePage from './pages/WorkspacePage'
-import DrawingsPage from './pages/DrawingsPage'
-import SheetViewerPage from './pages/SheetViewerPage'
 import QuantityTakeoffTablePage from './pages/QuantityTakeoffTablePage'
 
 export default function App() {
@@ -32,24 +30,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <QuantityTakeoffTablePage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/projects/:projectId/sheets/:sheetId"
-        element={
-          <ProtectedRoute>
-            <div className="h-full min-h-0">
-              <SheetViewerPage />
-            </div>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/projects/:projectId/sheets"
-        element={
-          <ProtectedRoute>
-            <DrawingsPage />
           </ProtectedRoute>
         }
       />

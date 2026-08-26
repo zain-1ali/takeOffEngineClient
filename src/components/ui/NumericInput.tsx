@@ -25,7 +25,8 @@ export type NumericInputProps = Omit<
 
 /**
  * Number field that keeps the raw typing string while focused, commits on blur/Enter,
- * supports `=` formulas via expr-eval, and never silently coerces junk to 0.
+ * supports arithmetic formulas (`2+4*4` or `=2+4*4`) via expr-eval, and never silently
+ * coerces junk to 0.
  */
 export function NumericInput({
   value,
@@ -117,7 +118,10 @@ export function NumericInput({
     if (event.key === 'Enter') {
       event.preventDefault()
       if (commit(draft)) {
-        inputRef.current?.blur()
+        // Keep focus and show the resolved number (e.g. 2+4*4 → 18).
+        requestAnimationFrame(() => {
+          inputRef.current?.select()
+        })
       }
     } else if (event.key === 'Escape') {
       event.preventDefault()

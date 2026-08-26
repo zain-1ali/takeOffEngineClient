@@ -131,7 +131,8 @@ function evaluateFormula(expression: string): ParseNumericResult {
 
 /**
  * Parse a draft string from NumericInput on blur/Enter.
- * Supports plain numbers and `=` formulas (safe expr-eval, not eval).
+ * Supports plain numbers and arithmetic formulas (with or without a leading `=`),
+ * evaluated via expr-eval — never `eval`.
  */
 export function parseNumericInput(
   raw: string,
@@ -149,6 +150,7 @@ export function parseNumericInput(
     return { ok: false, error: 'Enter a number' }
   }
 
+  // Explicit `=` formula, or an expression like `2+4*4` (not a plain number).
   if (trimmed.startsWith('=')) {
     const formulaResult = evaluateFormula(trimmed.slice(1))
     if (!formulaResult.ok) return formulaResult
@@ -159,14 +161,26 @@ export function parseNumericInput(
     return { ok: false, error: 'Enter a valid number' }
   }
 
-  if (!PLAIN_NUMBER.test(trimmed)) {
-    return { ok: false, error: 'Enter a valid number' }
+  if (PLAIN_NUMBER.test(trimmed)) {
+    const n = Number(trimmed)
+    if (!Number.isFinite(n)) {
+      return { ok: false, error: 'Enter a valid number' }
+    }
+    return applyBounds(n, options)
   }
 
-  const n = Number(trimmed)
-  if (!Number.isFinite(n)) {
-    return { ok: false, error: 'Enter a valid number' }
+  if (looksLikeFormula(trimmed)) {
+    const formulaResult = evaluateFormula(trimmed)
+    if (!formulaResult.ok) return formulaResult
+    return applyBounds(formulaResult.value as number, options)
   }
 
-  return applyBounds(n, options)
+  return { ok: false, error: 'Enter a valid number' }
+}
+
+/** True when the string is a safe arithmetic expression, not a lone plain number. */
+function looksLikeFormula(trimmed: string): boolean {
+  if (!FORMULA_SAFE.test(trimmed)) return false
+  // Must include an operator or parentheses beyond a leading unary minus.
+  return /[+*/()]/.test(trimmed) || /-.+/.test(trimmed.slice(1))
 }

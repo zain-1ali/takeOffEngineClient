@@ -171,23 +171,7 @@ export default function QuantityTakeoffTablePage() {
           Workspace
         </Link>
         <span className="text-steel/40">/</span>
-        <Link
-          to={`/projects/${projectId}/sheets`}
-          className="text-steel transition hover:text-ink"
-        >
-          Drawings
-        </Link>
-        {selectedSheet ? (
-          <>
-            <span className="text-steel/40">/</span>
-            <Link
-              to={`/projects/${projectId}/sheets/${selectedSheet.id}`}
-              className="text-steel transition hover:text-ink"
-            >
-              {selectedSheet.name}
-            </Link>
-          </>
-        ) : null}
+        <span className="text-ink">Quantity Takeoff</span>
       </nav>
 
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -215,10 +199,10 @@ export default function QuantityTakeoffTablePage() {
           </GhostButton>
           {selectedSheet ? (
             <Link
-              to={`/projects/${projectId}/sheets/${selectedSheet.id}`}
+              to={`/projects/${projectId}`}
               className="inline-flex items-center justify-center border border-signal bg-signal px-4 py-2 text-[13px] font-medium text-bg hover:brightness-110"
             >
-              Open sheet
+              Back to workspace
             </Link>
           ) : null}
         </div>
@@ -313,14 +297,7 @@ export default function QuantityTakeoffTablePage() {
                   'Uncategorized'
                 return (
                   <DataTable.Row key={row.id}>
-                    <DataTable.Cell>
-                      <Link
-                        to={`/projects/${projectId}/sheets/${row.sheetId}`}
-                        className="text-chalk hover:underline"
-                      >
-                        {row.sheetName}
-                      </Link>
-                    </DataTable.Cell>
+                    <DataTable.Cell>{row.sheetName}</DataTable.Cell>
                     <DataTable.Cell>{typeLabel(row.type)}</DataTable.Cell>
                     <DataTable.Cell>
                       <span className="inline-flex items-center gap-2">
