@@ -27,6 +27,13 @@ import {
   type ScreenPoint,
 } from "../lib/osdCoordinates";
 import {
+  arcFrom3Points,
+  bezierPointAt,
+  circleFrom3Points,
+  circleFromCenterRadius,
+} from "../lib/measurementMath";
+import type { MeasureSessionOverlay } from "../lib/measureSessionOverlays";
+import {
   ellipseFromCorners,
   normalizeRectangle,
   translateMarkupData,
@@ -78,12 +85,21 @@ export interface SheetViewerProps {
     pixelDistance: number;
   }) => void;
   onMeasurementComplete?: (payload: {
-    type: "LINEAR" | "AREA" | "COUNT";
+    type: "LINEAR" | "AREA" | "COUNT" | "CIRCLE" | "ARC" | "ANGLE" | "CURVED_PATH" | "DEDUCTION";
     points: ImagePoint[];
     color: string;
     /** Screen-space anchor for the label popup (near the finished shape). */
     anchorScreen?: ScreenPoint;
   }) => void;
+  /**
+   * Live draft while tracing (polyline running total, area rubber-band, etc.).
+   * `null` when the draft is cleared or the tool changes.
+   */
+  onDraftMeasureChange?: (draft: {
+    tool: ViewerTool;
+    points: ImagePoint[];
+    cursor: ImagePoint | null;
+  } | null) => void;
   onMarkupCreate?: (payload: {
     type: MarkupObject["type"];
     data: MarkupGeometry;
@@ -106,6 +122,11 @@ export interface SheetViewerProps {
     points: ImagePoint[];
     color: string;
   } | null;
+  /**
+   * Persistent measure-session overlays (survive after a trace finishes).
+   * Hidden items (`visible: false`) are omitted.
+   */
+  sessionOverlays?: MeasureSessionOverlay[];
   /** Human-confirmed AI room pins (confirmedX/Y on suggestion). */
   aiRoomPins?: AiRoomPin[];
   showAiRoomPins?: boolean;
@@ -136,17 +157,43 @@ function isDragDrawTool(tool: ViewerTool): boolean {
     tool === "freehand" ||
     tool === "markupLine" ||
     tool === "rectangle" ||
+    tool === "measureRect" ||
     tool === "ellipse"
   );
 }
 
-/** Click-to-trace tools (vertices, finish via double-click or close to first point). */
+/** Click-to-trace tools (vertices, finish via double-click / Enter / close). */
 function isClickTraceTool(tool: ViewerTool): boolean {
-  return tool === "linear" || tool === "area" || tool === "polygon";
+  return (
+    tool === "linear" ||
+    tool === "polyline" ||
+    tool === "curvedPath" ||
+    tool === "area" ||
+    tool === "polygon" ||
+    tool === "circle" ||
+    tool === "circle3" ||
+    tool === "arc" ||
+    tool === "angle" ||
+    tool === "deduction"
+  );
 }
 
 /** Screen-space proximity to close a polygon by clicking near the first vertex. */
 const CLOSE_POLYGON_THRESHOLD_PX = 10;
+
+function rectCorners(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): ImagePoint[] {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+}
 
 function isNearPointScreen(
   viewer: OpenSeadragon.Viewer,
@@ -171,15 +218,17 @@ export function SheetViewer({
   takeoffItems = [],
   markupObjects = [],
   selectedObject = null,
-  markupStyle = { color: "#e29a12", strokeWidth: 2 },
+  markupStyle = { color: "#c2410c", strokeWidth: 3 },
   onSelectObject,
   onCalibrationMeasured,
   onMeasurementComplete,
+  onDraftMeasureChange,
   onMarkupCreate,
   onMarkupUpdate,
   onTextPlace,
   inputBlocked = false,
   previewMeasurement = null,
+  sessionOverlays = [],
   aiRoomPins = [],
   showAiRoomPins = true,
   selectedAiRoomPinId = null,
@@ -201,6 +250,7 @@ export function SheetViewer({
 
   const onCalibrationRef = useRef(onCalibrationMeasured);
   const onMeasurementRef = useRef(onMeasurementComplete);
+  const onDraftMeasureChangeRef = useRef(onDraftMeasureChange);
   const onMarkupCreateRef = useRef(onMarkupCreate);
   const onMarkupUpdateRef = useRef(onMarkupUpdate);
   const onSelectRef = useRef(onSelectObject);
@@ -210,6 +260,7 @@ export function SheetViewer({
 
   onCalibrationRef.current = onCalibrationMeasured;
   onMeasurementRef.current = onMeasurementComplete;
+  onDraftMeasureChangeRef.current = onDraftMeasureChange;
   onMarkupCreateRef.current = onMarkupCreate;
   onMarkupUpdateRef.current = onMarkupUpdate;
   onSelectRef.current = onSelectObject;
@@ -454,17 +505,12 @@ export function SheetViewer({
     setCursorScreen(null);
     setMarkupDraft(null);
     drawingRef.current = false;
+    onDraftMeasureChangeRef.current?.(null);
   }, [tool, clickToLocate]);
 
-  /** Escape cancels an in-progress click-trace without saving. */
+  /** Escape cancels an in-progress click-trace; Enter finishes polyline/area. */
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key !== "Escape") {
-        return;
-      }
-      if (draftPointsRef.current.length === 0 && !markupDraftRef.current) {
-        return;
-      }
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -474,22 +520,64 @@ export function SheetViewer({
       ) {
         return;
       }
+
+      if (event.key === "Enter") {
+        if (
+          !inputBlockedRef.current &&
+          (tool === "polyline" ||
+            tool === "curvedPath" ||
+            tool === "area" ||
+            tool === "deduction" ||
+            tool === "linear") &&
+          draftPointsRef.current.length > 0
+        ) {
+          event.preventDefault();
+          finishClickTrace();
+        }
+        return;
+      }
+
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (draftPointsRef.current.length === 0 && !markupDraftRef.current) {
+        return;
+      }
       event.preventDefault();
       setDraftPoints([]);
       setDraftScreen([]);
       setCursorScreen(null);
       setMarkupDraft(null);
       drawingRef.current = false;
+      onDraftMeasureChangeRef.current?.(null);
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    // finishClickTrace closes over `tool`; re-bind when tool changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [tool]);
 
   function clearDraft(): void {
     setDraftPoints([]);
     setDraftScreen([]);
     setCursorScreen(null);
+    onDraftMeasureChangeRef.current?.(null);
+  }
+
+  function emitDraftMeasure(
+    points: ImagePoint[],
+    cursor: ImagePoint | null = null
+  ): void {
+    if (points.length === 0) {
+      onDraftMeasureChangeRef.current?.(null);
+      return;
+    }
+    onDraftMeasureChangeRef.current?.({
+      tool,
+      points,
+      cursor,
+    });
   }
 
   function measurementAnchor(points: ImagePoint[]): ScreenPoint | undefined {
@@ -534,12 +622,23 @@ export function SheetViewer({
       return;
     }
 
-    if (tool === "linear" || tool === "area" || tool === "polygon") {
+    if (
+      tool === "linear" ||
+      tool === "polyline" ||
+      tool === "curvedPath" ||
+      tool === "area" ||
+      tool === "polygon" ||
+      tool === "circle" ||
+      tool === "circle3" ||
+      tool === "arc" ||
+      tool === "angle" ||
+      tool === "deduction"
+    ) {
       const existing = draftPointsRef.current;
 
       // Close irregular polygon by clicking near the first vertex again.
       if (
-        (tool === "area" || tool === "polygon") &&
+        (tool === "area" || tool === "polygon" || tool === "deduction") &&
         existing.length >= 3 &&
         isNearPointScreen(
           viewer,
@@ -553,15 +652,29 @@ export function SheetViewer({
       }
 
       const next = [...existing, imagePoint];
+      draftPointsRef.current = next;
       setDraftPoints(next);
       projectDraft(viewer, next);
+      emitDraftMeasure(next, null);
+
+      // Auto-finish by click count.
+      if (tool === "linear" && next.length >= 2) {
+        finishClickTrace();
+      } else if (tool === "circle" && next.length >= 2) {
+        finishClickTrace();
+      } else if (
+        (tool === "circle3" || tool === "arc" || tool === "angle") &&
+        next.length >= 3
+      ) {
+        finishClickTrace();
+      }
     }
   }
 
   function finishClickTrace(): void {
     const points = draftPointsRef.current;
 
-    if (tool === "linear" && points.length >= 2) {
+    if ((tool === "linear" || tool === "polyline") && points.length >= 2) {
       const finished = [...points];
       onMeasurementRef.current?.({
         type: "LINEAR",
@@ -573,8 +686,80 @@ export function SheetViewer({
       return;
     }
 
+    if (tool === "curvedPath" && points.length >= 2) {
+      const finished = [...points];
+      onMeasurementRef.current?.({
+        type: "CURVED_PATH",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
+    if (tool === "circle" && points.length >= 2) {
+      const finished = points.slice(0, 2);
+      onMeasurementRef.current?.({
+        type: "CIRCLE",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
+    if (tool === "circle3" && points.length >= 3) {
+      const finished = points.slice(0, 3);
+      onMeasurementRef.current?.({
+        type: "CIRCLE",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
+    if (tool === "arc" && points.length >= 3) {
+      const finished = points.slice(0, 3);
+      onMeasurementRef.current?.({
+        type: "ARC",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
+    if (tool === "angle" && points.length >= 3) {
+      const finished = points.slice(0, 3);
+      onMeasurementRef.current?.({
+        type: "ANGLE",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
+    if (tool === "deduction" && points.length >= 3) {
+      const finished = [...points];
+      onMeasurementRef.current?.({
+        type: "DEDUCTION",
+        points: finished,
+        color: markupStyleRef.current.color,
+        anchorScreen: measurementAnchor(finished),
+      });
+      clearDraft();
+      return;
+    }
+
     if (tool === "area" && points.length >= 3) {
-      // Close polygon (last → first). Shoelace runs on these vertices.
+      // Close polygon (last → first). Shoelace / perimeter use these vertices.
       const finished = [...points];
       onMeasurementRef.current?.({
         type: "AREA",
@@ -604,8 +789,11 @@ export function SheetViewer({
       setMarkupDraft({ type: "FREEHAND", points: [imagePoint] });
     } else if (tool === "markupLine") {
       setMarkupDraft({ type: "LINE", start: imagePoint, end: imagePoint });
-    } else if (tool === "rectangle") {
+    } else if (tool === "rectangle" || tool === "measureRect") {
       setMarkupDraft({ type: "RECTANGLE", start: imagePoint, end: imagePoint });
+      if (tool === "measureRect") {
+        emitDraftMeasure([imagePoint, imagePoint], imagePoint);
+      }
     } else if (tool === "ellipse") {
       setMarkupDraft({ type: "ELLIPSE", start: imagePoint, end: imagePoint });
     }
@@ -632,7 +820,17 @@ export function SheetViewer({
       return;
     }
 
+    // measureRect: keep axis-aligned (ortho) corners via normalizeRectangle.
     setMarkupDraft({ ...draft, end: imagePoint });
+    if (tool === "measureRect" && draft.type === "RECTANGLE") {
+      const rect = normalizeRectangle(
+        draft.start.x,
+        draft.start.y,
+        imagePoint.x,
+        imagePoint.y
+      );
+      emitDraftMeasure(rectCorners(rect), imagePoint);
+    }
   }
 
   function finishMarkup(): void {
@@ -674,12 +872,25 @@ export function SheetViewer({
         draft.end.y
       );
       if (rect.width > 1 && rect.height > 1) {
-        onMarkupCreateRef.current?.({
-          type: "RECTANGLE",
-          data: rect,
-          color,
-          strokeWidth,
-        });
+        if (tool === "measureRect") {
+          const points = rectCorners(rect);
+          onMeasurementRef.current?.({
+            type: "AREA",
+            points,
+            color,
+            anchorScreen: measurementAnchor(points),
+          });
+          onDraftMeasureChangeRef.current?.(null);
+        } else {
+          onMarkupCreateRef.current?.({
+            type: "RECTANGLE",
+            data: rect,
+            color,
+            strokeWidth,
+          });
+        }
+      } else if (tool === "measureRect") {
+        onDraftMeasureChangeRef.current?.(null);
       }
     } else if (draft.type === "ELLIPSE") {
       const ellipse = ellipseFromCorners(
@@ -773,6 +984,24 @@ export function SheetViewer({
           y: event.evt.clientY - rect.top,
         });
       }
+      const imagePoint = screenEventToImagePoint(
+        viewer,
+        event.evt.clientX,
+        event.evt.clientY
+      );
+      if (
+        imagePoint &&
+        (tool === "polyline" ||
+          tool === "curvedPath" ||
+          tool === "area" ||
+          tool === "deduction" ||
+          tool === "circle" ||
+          tool === "circle3" ||
+          tool === "arc" ||
+          tool === "angle")
+      ) {
+        emitDraftMeasure(draftPointsRef.current, imagePoint);
+      }
     }
 
     if (!drawingRef.current || !isDragDrawTool(tool)) {
@@ -833,23 +1062,115 @@ export function SheetViewer({
   const draftLine = flattenScreenPoints(draftScreen);
 
   const rubberBandPoints =
-    cursorScreen && draftScreen.length > 0
+    cursorScreen &&
+    draftScreen.length > 0 &&
+    tool !== "circle" &&
+    tool !== "circle3"
       ? [
           draftScreen[draftScreen.length - 1].x,
           draftScreen[draftScreen.length - 1].y,
           cursorScreen.x,
           cursorScreen.y,
         ]
+      : tool === "angle" && cursorScreen && draftScreen.length === 1
+        ? [
+            draftScreen[0].x,
+            draftScreen[0].y,
+            cursorScreen.x,
+            cursorScreen.y,
+          ]
+        : tool === "angle" && cursorScreen && draftScreen.length === 2
+          ? [
+              draftScreen[0].x,
+              draftScreen[0].y,
+              cursorScreen.x,
+              cursorScreen.y,
+            ]
+          : tool === "circle" && cursorScreen && draftScreen.length === 1
+            ? [
+                draftScreen[0].x,
+                draftScreen[0].y,
+                cursorScreen.x,
+                cursorScreen.y,
+              ]
+            : null;
+
+  /** Live circle ghost (center+radius or solved 3-point). */
+  const circleDraftScreen = (() => {
+    if (tool === "circle" && draftScreen.length >= 1) {
+      const c = draftScreen[0];
+      const rim = draftScreen[1] ?? cursorScreen;
+      if (!rim) return null;
+      const radius = Math.hypot(rim.x - c.x, rim.y - c.y);
+      if (!(radius > 1)) return null;
+      return { x: c.x, y: c.y, radius };
+    }
+    if (tool === "circle3" && draftPoints.length >= 3 && viewer) {
+      const solved = circleFrom3Points(
+        draftPoints[0],
+        draftPoints[1],
+        draftPoints[2]
+      );
+      if (!solved) return null;
+      const c = imagePointToScreenPoint(viewer, solved.center);
+      const onCirc = imagePointToScreenPoint(viewer, draftPoints[0]);
+      const radius = Math.hypot(onCirc.x - c.x, onCirc.y - c.y);
+      if (!(radius > 1)) return null;
+      return { x: c.x, y: c.y, radius };
+    }
+    if (tool === "arc" && draftPoints.length >= 3 && viewer) {
+      const arc = arcFrom3Points(draftPoints[0], draftPoints[1], draftPoints[2]);
+      if (!arc) return null;
+      const c = imagePointToScreenPoint(viewer, arc.center);
+      const onCirc = imagePointToScreenPoint(viewer, draftPoints[0]);
+      const radius = Math.hypot(onCirc.x - c.x, onCirc.y - c.y);
+      if (!(radius > 1)) return null;
+      return { x: c.x, y: c.y, radius, dash: true as const };
+    }
+    return null;
+  })();
+
+  const angleRayPoints =
+    tool === "angle" && draftScreen.length >= 2
+      ? [
+          draftScreen[1].x,
+          draftScreen[1].y,
+          draftScreen[0].x,
+          draftScreen[0].y,
+          (draftScreen[2] ?? cursorScreen)?.x ?? draftScreen[0].x,
+          (draftScreen[2] ?? cursorScreen)?.y ?? draftScreen[0].y,
+        ]
       : null;
 
   const closeHintActive =
-    (tool === "area" || tool === "polygon") &&
+    (tool === "area" || tool === "polygon" || tool === "deduction") &&
     draftScreen.length >= 3 &&
     cursorScreen != null &&
     Math.hypot(
       cursorScreen.x - draftScreen[0].x,
       cursorScreen.y - draftScreen[0].y
     ) <= CLOSE_POLYGON_THRESHOLD_PX;
+
+  /** Sampled Bézier polyline for curved-path draft (screen space). */
+  const curvedDraftFlat = (() => {
+    if (tool !== "curvedPath" || draftPoints.length < 2 || !viewer) return null;
+    const controls =
+      cursorScreen && draftPoints.length >= 1
+        ? [
+            ...draftPoints,
+            // Approximate cursor as extra control in image space via last rubber — skip if no image cursor
+          ]
+        : draftPoints;
+    // Use draft points only for stable curve; rubber-band is separate.
+    const samples: ScreenPoint[] = [];
+    const n = 48;
+    for (let i = 0; i <= n; i += 1) {
+      const p = bezierPointAt(draftPoints, i / n);
+      if (p) samples.push(imagePointToScreenPoint(viewer, p));
+    }
+    void controls;
+    return flattenScreenPoints(samples);
+  })();
 
   const previewScreen =
     viewer && previewMeasurement
@@ -1229,6 +1550,26 @@ export function SheetViewer({
               return null;
             })}
 
+            {/* Persistent measure-session overlays */}
+            {viewer
+              ? (() => {
+                  let markerBase = 0;
+                  return sessionOverlays
+                    .filter((o) => o.visible && o.points.length > 0)
+                    .map((overlay) => {
+                      const node = renderSessionOverlay(
+                        overlay,
+                        viewer,
+                        markerBase
+                      );
+                      if (overlay.kind === "COUNT") {
+                        markerBase += overlay.points.length;
+                      }
+                      return node;
+                    });
+                })()
+              : null}
+
             {previewScreen && previewScreen.points.length > 0 ? (
               previewScreen.type === "COUNT" ? (
                 previewScreen.points.map((point, index) => (
@@ -1261,22 +1602,38 @@ export function SheetViewer({
               )
             ) : null}
 
-            {draftLine.length >= 4 ? (
+            {draftLine.length >= 4 && tool !== "curvedPath" ? (
               <Line
                 points={draftLine}
                 stroke={draftColor}
-                strokeWidth={2}
+                strokeWidth={2.5}
                 dash={tool === "calibrate" ? [8, 6] : undefined}
                 closed={
-                  (tool === "area" || tool === "polygon") &&
+                  (tool === "area" ||
+                    tool === "polygon" ||
+                    tool === "deduction") &&
                   draftScreen.length >= 3
                 }
                 fill={
-                  (tool === "area" || tool === "polygon") &&
+                  (tool === "area" ||
+                    tool === "polygon" ||
+                    tool === "deduction") &&
                   draftScreen.length >= 3
-                    ? `${draftColor}33`
+                    ? tool === "deduction"
+                      ? `${draftColor}55`
+                      : `${draftColor}55`
                     : undefined
                 }
+                listening={false}
+              />
+            ) : null}
+            {curvedDraftFlat && curvedDraftFlat.length >= 4 ? (
+              <Line
+                points={curvedDraftFlat}
+                stroke={draftColor}
+                strokeWidth={2}
+                lineCap="round"
+                lineJoin="round"
                 listening={false}
               />
             ) : null}
@@ -1290,13 +1647,36 @@ export function SheetViewer({
                 listening={false}
               />
             ) : null}
+            {circleDraftScreen ? (
+              <Circle
+                x={circleDraftScreen.x}
+                y={circleDraftScreen.y}
+                radius={circleDraftScreen.radius}
+                stroke={draftColor}
+                strokeWidth={1.5}
+                dash={"dash" in circleDraftScreen ? [6, 4] : undefined}
+                fill={`${draftColor}22`}
+                listening={false}
+              />
+            ) : null}
+            {angleRayPoints ? (
+              <Line
+                points={angleRayPoints}
+                stroke={draftColor}
+                strokeWidth={2}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />
+            ) : null}
             {draftScreen.map((point, index) => (
               <Circle
                 key={`draft-${index}`}
                 x={point.x}
                 y={point.y}
                 radius={
-                  index === 0 && (tool === "area" || tool === "polygon")
+                  index === 0 &&
+                  (tool === "area" || tool === "polygon" || tool === "deduction")
                     ? closeHintActive
                       ? 8
                       : 6
@@ -1342,6 +1722,177 @@ export function SheetViewer({
       ) : null}
     </div>
   );
+}
+
+function renderSessionOverlay(
+  overlay: MeasureSessionOverlay,
+  viewer: OpenSeadragon.Viewer,
+  countMarkerBase: number
+): ReactNode {
+  const color = overlay.color || "#c2410c";
+  const strokeW = 3;
+  const screenPts = overlay.points.map((p) =>
+    imagePointToScreenPoint(viewer, p)
+  );
+  const flat = flattenScreenPoints(screenPts);
+  const vertexDots = screenPts.map((p, i) => (
+    <Circle
+      key={`v-${overlay.id}-${i}`}
+      x={p.x}
+      y={p.y}
+      radius={5}
+      fill={color}
+      stroke="#1c1917"
+      strokeWidth={1.5}
+      listening={false}
+    />
+  ));
+
+  if (overlay.kind === "COUNT") {
+    return (
+      <Group key={overlay.id} listening={false}>
+        {screenPts.map((point, index) => (
+          <Group key={`${overlay.id}-c-${index}`}>
+            <Circle
+              x={point.x}
+              y={point.y}
+              radius={11}
+              fill={color}
+              stroke="#1c1917"
+              strokeWidth={2}
+            />
+            <Text
+              x={point.x - 11}
+              y={point.y - 6}
+              width={22}
+              align="center"
+              text={String(countMarkerBase + index + 1)}
+              fontSize={11}
+              fontStyle="bold"
+              fill="#fff7ed"
+            />
+          </Group>
+        ))}
+      </Group>
+    );
+  }
+
+  if (overlay.kind === "CIRCLE") {
+    const solved =
+      overlay.points.length >= 3
+        ? circleFrom3Points(
+            overlay.points[0],
+            overlay.points[1],
+            overlay.points[2]
+          )
+        : overlay.points.length >= 2
+          ? circleFromCenterRadius(overlay.points[0], overlay.points[1])
+          : null;
+    if (!solved) return null;
+    const c = imagePointToScreenPoint(viewer, solved.center);
+    const rim = imagePointToScreenPoint(viewer, {
+      x: solved.center.x + solved.radiusPx,
+      y: solved.center.y,
+    });
+    // Prefer distance to first circumference point for non-uniform scale.
+    const onCirc = imagePointToScreenPoint(viewer, overlay.points[0]);
+    const radius = Math.hypot(onCirc.x - c.x, onCirc.y - c.y);
+    void rim;
+    return (
+      <Group key={overlay.id} listening={false}>
+        <Circle
+          x={c.x}
+          y={c.y}
+          radius={Math.max(radius, 1)}
+          stroke={color}
+          strokeWidth={strokeW}
+          fill={`${color}55`}
+        />
+        {vertexDots}
+      </Group>
+    );
+  }
+
+  if (overlay.kind === "ANGLE" && screenPts.length >= 3) {
+    return (
+      <Group key={overlay.id} listening={false}>
+        <Line
+          points={[
+            screenPts[1].x,
+            screenPts[1].y,
+            screenPts[0].x,
+            screenPts[0].y,
+            screenPts[2].x,
+            screenPts[2].y,
+          ]}
+          stroke={color}
+          strokeWidth={strokeW}
+          lineCap="round"
+          lineJoin="round"
+        />
+        {vertexDots}
+      </Group>
+    );
+  }
+
+  if (overlay.kind === "CURVED" && overlay.points.length >= 2) {
+    const samples: ScreenPoint[] = [];
+    const n = 64;
+    for (let i = 0; i <= n; i += 1) {
+      const p = bezierPointAt(overlay.points, i / n);
+      if (p) samples.push(imagePointToScreenPoint(viewer, p));
+    }
+    return (
+      <Group key={overlay.id} listening={false}>
+        <Line
+          points={flattenScreenPoints(samples)}
+          stroke={color}
+          strokeWidth={strokeW}
+          lineCap="round"
+          lineJoin="round"
+        />
+        {vertexDots}
+      </Group>
+    );
+  }
+
+  if (
+    (overlay.kind === "AREA" || overlay.kind === "DEDUCTION") &&
+    flat.length >= 6
+  ) {
+    return (
+      <Group key={overlay.id} listening={false}>
+        <Line
+          points={flat}
+          stroke={color}
+          strokeWidth={strokeW}
+          closed
+          dash={overlay.kind === "DEDUCTION" ? [8, 5] : undefined}
+          fill={
+            overlay.kind === "DEDUCTION" ? `${color}33` : `${color}55`
+          }
+        />
+        {vertexDots}
+      </Group>
+    );
+  }
+
+  if (flat.length >= 4) {
+    return (
+      <Group key={overlay.id} listening={false}>
+        <Line
+          points={flat}
+          stroke={color}
+          strokeWidth={strokeW}
+          lineCap="round"
+          lineJoin="round"
+        />
+        {vertexDots}
+      </Group>
+    );
+  }
+
+  return null;
 }
 
 function renderMarkupDraft(

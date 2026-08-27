@@ -16,6 +16,10 @@ import {
 import { ELEMENT_ENGINES } from '../../elementEngines'
 import { analyseRate } from '../../lib/analyseRate'
 import {
+  getFieldFormula,
+  withFieldFormula,
+} from '../../lib/numericFieldFormulas'
+import {
   convertQuantity,
   displayLengthLabel,
   displayOutputLabel,
@@ -52,12 +56,16 @@ import {
 // import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
 import {
+  FieldMeasureButton,
   MeasureSessionModal,
   measureButtonTooltip,
   type MeasureApplyPatch,
 } from '../MeasureSessionModal'
 import { fetchSheets } from '../../api/sheets'
-import { getMeasureTargets } from '../../constants/measureTraceableFields'
+import {
+  isTraceableScheduleField,
+  resolveFieldMeasureFocus,
+} from '../../constants/measureTraceableFields'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
@@ -134,13 +142,17 @@ const fieldCls =
 function ScheduleInput({
   field,
   value,
+  formula,
   onChange,
   disabled,
+  unitSystem = 'metric',
 }: {
   field: FieldDef
   value: string | number | boolean
-  onChange: (v: string | number | boolean) => void
+  formula?: string | null
+  onChange: (v: string | number | boolean, formula?: string | null) => void
   disabled?: boolean
+  unitSystem?: UnitSystem
 }) {
   const cls =
     field.type === 'text' ? `${fieldCls} min-w-[8rem] font-sans` : fieldCls
@@ -189,6 +201,15 @@ function ScheduleInput({
     )
   }
 
+  // Schema min/max are metric; length columns edit display units.
+  const lengthField = isMetricLengthLabel(field.label)
+  const bound = (metric: number | undefined) =>
+    metric == null
+      ? undefined
+      : lengthField
+        ? lengthToDisplay(metric, unitSystem)
+        : metric
+
   return (
     <NumericInput
       className={cls}
@@ -197,13 +218,14 @@ function ScheduleInput({
           ? null
           : Number(value)
       }
-      min={field.min}
-      max={field.max}
+      formula={formula}
+      min={bound(field.min)}
+      max={bound(field.max)}
       integer={field.dec === 0}
       allowEmpty
       showError={false}
       disabled={disabled}
-      onChange={(n) => onChange(n == null ? '' : n)}
+      onChange={(n, f) => onChange(n == null ? '' : n, f)}
     />
   )
 }
@@ -233,7 +255,10 @@ export function ScheduleTab({
     mode: 'point' | 'span'
     items: { id: string; mark: string; geometry: Record<string, unknown> }[]
   } | null>(null)
-  const [measureInst, setMeasureInst] = useState<Instance | null>(null)
+  const [measureSession, setMeasureSession] = useState<{
+    instance: Instance
+    fieldKey: string
+  } | null>(null)
 
   const instancesQuery = useQuery({
     queryKey: ['instances', projectId, floorId, elementKey],
@@ -639,7 +664,6 @@ export function ScheduleTab({
                       {displayOutputLabel(c.label, c.unit, unitSystem)}
                     </DataTable.HeaderCell>
                   ))}
-                  <DataTable.HeaderCell className="w-16" />
                   <DataTable.HeaderCell className="w-10" />
                 </DataTable.Row>
               </DataTable.Header>
@@ -687,7 +711,6 @@ export function ScheduleTab({
                             </DataTable.Cell>
                           ))}
                           <DataTable.Cell className="!py-2" />
-                          <DataTable.Cell className="!py-2" />
                         </DataTable.Row>
                       )}
                       {group.instances.map((inst) => (
@@ -707,10 +730,10 @@ export function ScheduleTab({
                           measureDisabledReason={measureButtonTooltip(
                             hasFloorSheet,
                             floorSheetCalibrated,
-                            getMeasureTargets(inst.elementKey, inst.shape).length >
-                              0,
                           )}
-                          onMeasure={() => setMeasureInst(inst)}
+                          onMeasureField={(fieldKey) =>
+                            setMeasureSession({ instance: inst, fieldKey })
+                          }
                           onDelete={() => {
                             if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
                           }}
@@ -738,7 +761,6 @@ export function ScheduleTab({
                                 : ''}
                             </DataTable.Cell>
                           ))}
-                          <DataTable.Cell className="!py-1.5" />
                           <DataTable.Cell className="!py-1.5" />
                         </DataTable.Row>
                       )}
@@ -768,7 +790,6 @@ export function ScheduleTab({
                     )
                   })}
                   <DataTable.Cell />
-                  <DataTable.Cell />
                 </DataTable.Row>
               </DataTable.Footer>
             </DataTable>
@@ -776,31 +797,50 @@ export function ScheduleTab({
         )}
       </div>
 
-      {measureInst ? (
+      {measureSession ? (
         <MeasureSessionModal
           open
           projectId={projectId}
           floorId={floorId}
-          instance={measureInst}
-          onClose={() => setMeasureInst(null)}
+          instance={measureSession.instance}
+          fieldKey={measureSession.fieldKey}
+          onClose={() => setMeasureSession(null)}
           onApply={(patch: MeasureApplyPatch) => {
             const body: Record<string, unknown> = {}
             if (patch.geometry) {
-              body.geometry = {
-                ...(measureInst.geometry || {}),
+              let geometry = {
+                ...(measureSession.instance.geometry || {}),
                 ...patch.geometry,
               }
+              for (const key of Object.keys(patch.geometry)) {
+                geometry = withFieldFormula(geometry, key, null)
+              }
+              body.geometry = geometry
             }
-            if (patch.count != null) body.count = patch.count
-            schedulePatch(measureInst.id, body)
-            setMeasureInst((prev) =>
+            if (patch.count != null) {
+              body.count = patch.count
+              body.geometry = withFieldFormula(
+                {
+                  ...((body.geometry as Record<string, unknown>) ||
+                    measureSession.instance.geometry ||
+                    {}),
+                },
+                'count',
+                null,
+              )
+            }
+            schedulePatch(measureSession.instance.id, body)
+            setMeasureSession((prev) =>
               prev
                 ? {
                     ...prev,
-                    count: patch.count ?? prev.count,
-                    geometry: patch.geometry
-                      ? { ...(prev.geometry || {}), ...patch.geometry }
-                      : prev.geometry,
+                    instance: {
+                      ...prev.instance,
+                      count: patch.count ?? prev.instance.count,
+                      geometry: (body.geometry as Record<string, unknown>)
+                        ? (body.geometry as Record<string, unknown>)
+                        : prev.instance.geometry,
+                    },
                   }
                 : prev,
             )
@@ -824,7 +864,7 @@ function InstanceRow({
   onSelectedChange,
   onPatch,
   measureDisabledReason,
-  onMeasure,
+  onMeasureField,
   onDelete,
 }: {
   inst: Instance
@@ -839,7 +879,7 @@ function InstanceRow({
   onSelectedChange?: (on: boolean) => void
   onPatch: (patch: Record<string, unknown>) => void
   measureDisabledReason: string | null
-  onMeasure: () => void
+  onMeasureField: (fieldKey: string) => void
   onDelete: () => void
 }) {
   const [local, setLocal] = useState(inst)
@@ -858,13 +898,18 @@ function InstanceRow({
     return v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0
   })()
 
-  function setGeo(key: string, value: unknown) {
-    const geometry = { ...(local.geometry || {}) }
+  function setGeo(
+    key: string,
+    value: unknown,
+    formula: string | null = null,
+  ) {
+    let geometry = { ...(local.geometry || {}) }
     if (value === '' || value == null) {
       delete geometry[key]
     } else {
       geometry[key] = value
     }
+    geometry = withFieldFormula(geometry, key, formula)
     // Keep multi-segment model in sync when editing flat flight columns.
     if (
       isStairs &&
@@ -899,19 +944,25 @@ function InstanceRow({
     onPatch({ geometry })
   }
 
-  /** Patch several geometry keys in one autosave write. */
+  /** Patch several geometry keys in one autosave write (clears formulas for those keys). */
   function setGeoMany(patch: Record<string, unknown>) {
-    const geometry = { ...(local.geometry || {}) }
+    let geometry = { ...(local.geometry || {}) }
     for (const [key, value] of Object.entries(patch)) {
       if (value === '' || value == null) delete geometry[key]
       else geometry[key] = value
+      geometry = withFieldFormula(geometry, key, null)
     }
     setLocal((l) => ({ ...l, geometry }))
     onPatch({ geometry })
   }
 
-  function setRebar(key: string, value: unknown) {
-    const reinforcement = { ...(local.reinforcement || {}), [key]: value }
+  function setRebar(
+    key: string,
+    value: unknown,
+    formula: string | null = null,
+  ) {
+    let reinforcement = { ...(local.reinforcement || {}), [key]: value }
+    reinforcement = withFieldFormula(reinforcement, key, formula)
     setLocal((l) => ({ ...l, reinforcement }))
     onPatch({ reinforcement })
   }
@@ -1082,19 +1133,39 @@ function InstanceRow({
         )}
       </DataTable.Cell>
       <DataTable.Cell className="w-14">
-        <NumericInput
-          min={1}
-          integer
-          emptyValue={1}
-          showError={false}
-          className={fieldCls}
-          value={local.count}
-          onChange={(n) => {
-            const count = Math.max(1, n ?? 1)
-            setLocal((l) => ({ ...l, count }))
-            onPatch({ count })
-          }}
-        />
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <NumericInput
+              min={1}
+              integer
+              emptyValue={1}
+              showError={false}
+              className={fieldCls}
+              value={local.count}
+              formula={getFieldFormula(local.geometry, 'count')}
+              onChange={(n, formula) => {
+                const count = Math.max(1, n ?? 1)
+                const geometry = withFieldFormula(
+                  { ...(local.geometry || {}) },
+                  'count',
+                  formula ?? null,
+                )
+                setLocal((l) => ({ ...l, count, geometry }))
+                onPatch({ count, geometry })
+              }}
+            />
+          </div>
+          {isTraceableScheduleField(local.elementKey, local.shape, 'count') && (
+            <FieldMeasureButton
+              disabledReason={measureDisabledReason}
+              label={
+                resolveFieldMeasureFocus(local.elementKey, local.shape, 'count')
+                  ?.target.label ?? 'No.'
+              }
+              onClick={() => onMeasureField('count')}
+            />
+          )}
+        </div>
       </DataTable.Cell>
       <DataTable.Cell>
         <select
@@ -1229,7 +1300,9 @@ function InstanceRow({
                     <ScheduleInput
                       field={field}
                       value={displayVal}
-                      onChange={(v) => {
+                      formula={getFieldFormula(local.geometry, col.key)}
+                      unitSystem={unitSystem}
+                      onChange={(v, formula) => {
                         if (field.type === 'text' || field.type === 'select') {
                           const s = String(v ?? '').trim()
                           setGeo(col.key, s ? s : '')
@@ -1239,25 +1312,32 @@ function InstanceRow({
                           if (isOpeningsField) {
                             setGeoMany({ openingArea: '', openings: [] })
                           } else {
-                            setGeo(col.key, '')
+                            setGeo(col.key, '', null)
                           }
                           return
                         }
                         const num = typeof v === 'number' ? v : Number(v)
                         if (Number.isNaN(num)) {
-                          setGeo(col.key, '')
+                          setGeo(col.key, '', null)
                           return
                         }
                         if (isWasteField) {
-                          setGeo(col.key, Math.max(0, num) / 100)
+                          setGeo(col.key, Math.max(0, num) / 100, formula ?? null)
                           return
                         }
                         if (isOpeningsField) {
                           // Manual total clears saved breakdown (stale rows would lie).
-                          setGeoMany({
-                            openingArea: num,
-                            openings: [],
-                          })
+                          let geometry = { ...(local.geometry || {}) }
+                          geometry.openingArea = num
+                          geometry.openings = []
+                          geometry = withFieldFormula(
+                            geometry,
+                            'openingArea',
+                            formula ?? null,
+                          )
+                          geometry = withFieldFormula(geometry, 'openings', null)
+                          setLocal((l) => ({ ...l, geometry }))
+                          onPatch({ geometry })
                           return
                         }
                         setGeo(
@@ -1269,6 +1349,7 @@ function InstanceRow({
                                 ),
                               )
                             : num,
+                          formula ?? null,
                         )
                       }}
                     />
@@ -1282,6 +1363,28 @@ function InstanceRow({
                     >
                       ▦
                     </button>
+                  )}
+                  {isTraceableScheduleField(
+                    local.elementKey,
+                    local.shape,
+                    col.key,
+                  ) && (
+                    <FieldMeasureButton
+                      disabledReason={measureDisabledReason}
+                      label={(() => {
+                        const focus = resolveFieldMeasureFocus(
+                          local.elementKey,
+                          local.shape,
+                          col.key,
+                        )
+                        return (
+                          focus?.clickedLabel ??
+                          focus?.target.label ??
+                          col.key
+                        )
+                      })()}
+                      onClick={() => onMeasureField(col.key)}
+                    />
                   )}
                 </div>
                 {isOpeningsField && openingsCount > 0 && (
@@ -1362,7 +1465,11 @@ function InstanceRow({
                   (local.reinforcement?.[field.key] as string | number | boolean) ??
                   field.def
                 }
-                onChange={(v) => setRebar(field.key, v)}
+                formula={getFieldFormula(local.reinforcement, field.key)}
+                unitSystem={unitSystem}
+                onChange={(v, formula) =>
+                  setRebar(field.key, v, formula ?? null)
+                }
               />
             )}
           </DataTable.Cell>
@@ -1413,17 +1520,6 @@ function InstanceRow({
           </DataTable.Cell>
         )
       })}
-      <DataTable.Cell>
-        <button
-          type="button"
-          className="text-xs text-chalk disabled:cursor-not-allowed disabled:text-steel/50"
-          title={measureDisabledReason ?? 'Open measurement session'}
-          disabled={Boolean(measureDisabledReason)}
-          onClick={onMeasure}
-        >
-          Measure
-        </button>
-      </DataTable.Cell>
       <DataTable.Cell>
         <button type="button" className="text-danger text-xs" onClick={onDelete}>
           ×

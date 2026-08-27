@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  angleDegrees,
+  arcFrom3Points,
   areaUnitLabel,
+  bezierLengthPx,
+  circleAreaPx2,
+  circleFrom3Points,
+  circleFromCenterRadius,
+  netAreaAfterDeductions,
   polygonAreaPx2,
+  polygonPerimeterPx,
   polylineLengthPx,
   segmentLengthPx,
   toRealArea,
@@ -10,6 +18,7 @@ import {
 } from "./measurementMath.ts";
 import { previewTakeoffMeasurement } from "./measurementPreview.ts";
 import { nextSequentialLabel } from "./takeoffLabels.ts";
+import { parentNetM2, type MeasureAreaParent } from "./measureAreaParents.ts";
 
 describe("segmentLengthPx", () => {
   it("returns 0 for identical points", () => {
@@ -94,6 +103,24 @@ describe("polygonAreaPx2 (shoelace)", () => {
   });
 });
 
+describe("polygonPerimeterPx", () => {
+  it("returns 0 for fewer than 3 points", () => {
+    assert.equal(polygonPerimeterPx([{ x: 0, y: 0 }, { x: 1, y: 0 }]), 0);
+  });
+
+  it("sums closed edges (same cycle as shoelace)", () => {
+    assert.equal(
+      polygonPerimeterPx([
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 20 },
+        { x: 0, y: 20 },
+      ]),
+      60
+    );
+  });
+});
+
 describe("toRealLength / toRealArea", () => {
   it("scales length linearly by calibrationScale", () => {
     assert.equal(toRealLength(100, 0.5), 50);
@@ -138,10 +165,11 @@ describe("previewTakeoffMeasurement", () => {
     assert.equal(previewTakeoffMeasurement("LINEAR", square, 0.5, null), null);
   });
 
-  it("previews AREA with scale² conversion", () => {
+  it("previews AREA with scale² conversion and perimeter", () => {
     assert.deepEqual(previewTakeoffMeasurement("AREA", square, 0.5, "ft"), {
       value: 25,
       unit: "ft²",
+      perimeter: { value: 20, unit: "ft" },
     });
   });
 
@@ -158,6 +186,79 @@ describe("previewTakeoffMeasurement", () => {
       ),
       { value: 5, unit: "ft" }
     );
+  });
+});
+
+describe("circle / arc / angle (hand-checks)", () => {
+  it("circle area πr² for r=2 (center + rim)", () => {
+    const solved = circleFromCenterRadius({ x: 0, y: 0 }, { x: 2, y: 0 });
+    assert.ok(solved);
+    assert.equal(solved.radiusPx, 2);
+    assert.ok(Math.abs(circleAreaPx2(solved.radiusPx) - 4 * Math.PI) < 1e-9);
+  });
+
+  it("circle from 3 circumference points (unit circle)", () => {
+    const a = { x: 1, y: 0 };
+    const b = { x: 0, y: 1 };
+    const c = { x: -1, y: 0 };
+    const solved = circleFrom3Points(a, b, c);
+    assert.ok(solved);
+    assert.ok(Math.abs(solved.center.x) < 1e-9);
+    assert.ok(Math.abs(solved.center.y) < 1e-9);
+    assert.ok(Math.abs(solved.radiusPx - 1) < 1e-9);
+    assert.ok(Math.abs(circleAreaPx2(solved.radiusPx) - Math.PI) < 1e-9);
+  });
+
+  it("arc length rθ for r=2, 90° (π/2 rad) → π", () => {
+    // Center (0,0), r=2: start east, through NE, end north → 90° CCW
+    const start = { x: 2, y: 0 };
+    const through = { x: Math.SQRT2, y: Math.SQRT2 };
+    const end = { x: 0, y: 2 };
+    const arc = arcFrom3Points(start, through, end);
+    assert.ok(arc);
+    assert.ok(Math.abs(arc.radiusPx - 2) < 1e-9);
+    assert.ok(Math.abs(arc.sweepRad - Math.PI / 2) < 1e-9);
+    assert.ok(Math.abs(arc.lengthPx - Math.PI) < 1e-9);
+  });
+
+  it("angle 90° via atan2 (V origin, A east, B north)", () => {
+    const deg = angleDegrees({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 });
+    assert.ok(deg != null);
+    assert.ok(Math.abs(deg - 90) < 1e-9);
+  });
+
+  it("angle 45° (V origin, A east, B northeast)", () => {
+    const deg = angleDegrees({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 });
+    assert.ok(deg != null);
+    assert.ok(Math.abs(deg - 45) < 1e-9);
+  });
+});
+
+describe("curved path / deductions (hand-checks)", () => {
+  it("Bézier with 2 control points equals the chord length", () => {
+    // Degree-1 Bézier is the line segment — sampling must recover exact length.
+    const len = bezierLengthPx(
+      [
+        { x: 0, y: 0 },
+        { x: 3, y: 4 },
+      ],
+      64
+    );
+    assert.ok(Math.abs(len - 5) < 1e-9);
+  });
+
+  it("parent area 10 − deductions 2 and 1.5 → net 6.5", () => {
+    assert.equal(netAreaAfterDeductions(10, [2, 1.5]), 6.5);
+    const parent: MeasureAreaParent = {
+      id: "a1",
+      label: "Area 1",
+      grossM2: 10,
+      deductions: [
+        { id: "d1", label: "Deduction 1", areaM2: 2 },
+        { id: "d2", label: "Deduction 2", areaM2: 1.5 },
+      ],
+    };
+    assert.equal(parentNetM2(parent), 6.5);
   });
 });
 

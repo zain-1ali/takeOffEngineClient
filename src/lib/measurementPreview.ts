@@ -1,6 +1,7 @@
 import {
   areaUnitLabel,
   polygonAreaPx2,
+  polygonPerimeterPx,
   polylineLengthPx,
   toRealArea,
   toRealLength,
@@ -11,6 +12,8 @@ import type { TakeoffType } from "../types/models";
 export interface MeasurementPreview {
   value: number;
   unit: string;
+  /** Closed perimeter from the same edge cycle as shoelace (AREA only). */
+  perimeter?: { value: number; unit: string };
 }
 
 /**
@@ -45,12 +48,16 @@ export function previewTakeoffMeasurement(
     };
   }
 
-  // AREA — pixel² × scale²
+  // AREA — pixel² × scale²; perimeter from the same closed edge walk.
   if (points.length < 3) {
     return null;
   }
   return {
     value: toRealArea(polygonAreaPx2(points), calibrationScale),
     unit: areaUnitLabel(calibrationUnit),
+    perimeter: {
+      value: toRealLength(polygonPerimeterPx(points), calibrationScale),
+      unit: calibrationUnit,
+    },
   };
 }

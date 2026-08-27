@@ -3,7 +3,17 @@
  * Approved: plan footprint/run/count only — no depths, rebar, specs, or calc outputs.
  */
 
-export type MeasureMode = 'LINEAR' | 'AREA' | 'COUNT'
+export type MeasureMode =
+  | 'LINEAR'
+  | 'POLYLINE'
+  | 'CURVED_PATH'
+  | 'AREA'
+  | 'RECTANGLE'
+  | 'CIRCLE'
+  | 'ARC'
+  | 'ANGLE'
+  | 'DEDUCTION'
+  | 'COUNT'
 
 export type MeasureTarget =
   | {
@@ -233,6 +243,52 @@ export function getMeasureTargets(
   if (!entry) return []
   if (Array.isArray(entry)) return entry
   return entry[shape] ?? entry[Object.keys(entry)[0] ?? ''] ?? []
+}
+
+/**
+ * Resolve which measure target owns a schedule field key (`count` or geometry key).
+ * For pairs, `clickedKey` is the member the user clicked (e.g. `length` for L).
+ */
+export type FieldMeasureFocus = {
+  target: MeasureTarget
+  /** For geometryPair: which side was clicked. */
+  clickedKey?: string
+  clickedLabel?: string
+}
+
+export function resolveFieldMeasureFocus(
+  elementKey: string,
+  shape: string,
+  fieldKey: string,
+): FieldMeasureFocus | null {
+  const targets = getMeasureTargets(elementKey, shape)
+  for (const target of targets) {
+    if (target.kind === 'count' && fieldKey === 'count') {
+      return { target }
+    }
+    if (target.kind === 'geometry' && target.key === fieldKey) {
+      return { target }
+    }
+    if (target.kind === 'geometryPair') {
+      const idx = target.keys.indexOf(fieldKey)
+      if (idx >= 0) {
+        return {
+          target,
+          clickedKey: fieldKey,
+          clickedLabel: target.labels[idx],
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function isTraceableScheduleField(
+  elementKey: string,
+  shape: string,
+  fieldKey: string,
+): boolean {
+  return resolveFieldMeasureFocus(elementKey, shape, fieldKey) != null
 }
 
 export function measureTargetFilled(

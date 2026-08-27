@@ -1,5 +1,13 @@
 import {
+  arcFrom3Points,
+  bezierLengthPx,
+  circleAreaPx2,
+  circleFrom3Points,
+  circleFromCenterRadius,
+  polygonAreaPx2,
+  polygonPerimeterPx,
   segmentLengthPx,
+  toRealArea,
   toRealLength,
   type ImagePoint,
 } from './measurementMath'
@@ -72,6 +80,115 @@ export function linearMetres(
   }
   if (!(px > 0)) return null
   return round3(lengthToMetres(toRealLength(px, calibrationScale), calibrationUnit))
+}
+
+/** Closed polygon perimeter in metres (same edge cycle as shoelace). */
+export function perimeterMetres(
+  points: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+): number | null {
+  if (points.length < 3 || !(calibrationScale > 0)) return null
+  const px = polygonPerimeterPx(points)
+  if (!(px > 0)) return null
+  return round3(lengthToMetres(toRealLength(px, calibrationScale), calibrationUnit))
+}
+
+/** Convert calibrated area into m². */
+export function areaToMetres2(
+  value: number,
+  unit: string | null | undefined,
+): number {
+  const u = (unit || 'm').toLowerCase()
+  if (u === 'ft' || u === 'feet') return value * 0.3048 * 0.3048
+  if (u === 'in' || u === 'inch' || u === 'inches') return value * 0.0254 * 0.0254
+  return value
+}
+
+/**
+ * Full-circle area in m² from center+rim (2 pts) or 3 circumference points.
+ */
+export function circleAreaMetres2(
+  points: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+): number | null {
+  if (!(calibrationScale > 0)) return null
+  const solved =
+    points.length >= 3
+      ? circleFrom3Points(points[0], points[1], points[2])
+      : points.length >= 2
+        ? circleFromCenterRadius(points[0], points[1])
+        : null
+  if (!solved) return null
+  const areaPx2 = circleAreaPx2(solved.radiusPx)
+  const areaReal = toRealArea(areaPx2, calibrationScale)
+  return round3(areaToMetres2(areaReal, calibrationUnit))
+}
+
+/** Radius in metres for a solved circle (2- or 3-point). */
+export function circleRadiusMetres(
+  points: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+): number | null {
+  if (!(calibrationScale > 0)) return null
+  const solved =
+    points.length >= 3
+      ? circleFrom3Points(points[0], points[1], points[2])
+      : points.length >= 2
+        ? circleFromCenterRadius(points[0], points[1])
+        : null
+  if (!solved) return null
+  return round3(
+    lengthToMetres(toRealLength(solved.radiusPx, calibrationScale), calibrationUnit),
+  )
+}
+
+/** Arc length in metres from start → through → end. */
+export function arcLengthMetres(
+  points: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+): number | null {
+  if (points.length < 3 || !(calibrationScale > 0)) return null
+  const arc = arcFrom3Points(points[0], points[1], points[2])
+  if (!arc) return null
+  return round3(
+    lengthToMetres(toRealLength(arc.lengthPx, calibrationScale), calibrationUnit),
+  )
+}
+
+/** Polygon area in m² (shoelace × scale²). */
+export function polygonAreaMetres2(
+  points: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+): number | null {
+  if (points.length < 3 || !(calibrationScale > 0)) return null
+  const areaPx2 = polygonAreaPx2(points)
+  if (!(areaPx2 > 0)) return null
+  return round3(
+    areaToMetres2(toRealArea(areaPx2, calibrationScale), calibrationUnit),
+  )
+}
+
+/**
+ * Curved-path length in metres from Bézier control clicks.
+ * See bezierLengthPx for the sampling approximation note.
+ */
+export function curvedPathMetres(
+  controls: readonly ImagePoint[],
+  calibrationScale: number,
+  calibrationUnit: string | null | undefined,
+  sampleCount = 64,
+): number | null {
+  if (controls.length < 2 || !(calibrationScale > 0)) return null
+  const px = bezierLengthPx(controls, sampleCount)
+  if (!(px > 0)) return null
+  return round3(
+    lengthToMetres(toRealLength(px, calibrationScale), calibrationUnit),
+  )
 }
 
 function round3(n: number): number {

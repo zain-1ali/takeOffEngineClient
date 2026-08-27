@@ -149,8 +149,10 @@ export type Instance = {
   shape: string
   mark: string
   count: number
+  /** Mixed bag; may include `formulas?: Record<fieldKey, string>` for NumericInput provenance. */
   geometry: Record<string, unknown>
   concreteGrade: string | null
+  /** Mixed bag; may include `formulas?: Record<fieldKey, string>` for NumericInput provenance. */
   reinforcement: Record<string, unknown> | null
   spec: string | null
   /** UniFormat location (Walls / Slabs / Doors / Wall finishes). */

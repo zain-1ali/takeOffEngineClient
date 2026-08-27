@@ -129,6 +129,29 @@ function evaluateFormula(expression: string): ParseNumericResult {
   }
 }
 
+/** True when the string is a safe arithmetic expression, not a lone plain number. */
+export function looksLikeFormula(trimmed: string): boolean {
+  if (!FORMULA_SAFE.test(trimmed)) return false
+  // Must include an operator or parentheses beyond a leading unary minus.
+  return /[+*/()]/.test(trimmed) || /-.+/.test(trimmed.slice(1))
+}
+
+/** True when the draft should be treated as a formula (leading `=` or operators). */
+export function isNumericFormulaInput(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('=')) return true
+  if (PLAIN_NUMBER.test(trimmed)) return false
+  return looksLikeFormula(trimmed)
+}
+
+/** Formula text for display/hints (strips a leading `=`). */
+export function formulaSourceForDisplay(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('=')) return trimmed.slice(1).trim()
+  return trimmed
+}
+
 /**
  * Parse a draft string from NumericInput on blur/Enter.
  * Supports plain numbers and arithmetic formulas (with or without a leading `=`),
@@ -176,11 +199,4 @@ export function parseNumericInput(
   }
 
   return { ok: false, error: 'Enter a valid number' }
-}
-
-/** True when the string is a safe arithmetic expression, not a lone plain number. */
-function looksLikeFormula(trimmed: string): boolean {
-  if (!FORMULA_SAFE.test(trimmed)) return false
-  // Must include an operator or parentheses beyond a leading unary minus.
-  return /[+*/()]/.test(trimmed) || /-.+/.test(trimmed.slice(1))
 }
