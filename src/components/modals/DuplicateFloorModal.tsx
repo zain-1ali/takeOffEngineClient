@@ -44,7 +44,10 @@ export function DuplicateFloorModal({
   const [emptyFloorIds, setEmptyFloorIds] = useState<string[]>([])
 
   const candidateFloors = useMemo(() => {
-    if (selectedMode) return floors
+    if (selectedMode) {
+      // Same-floor uses the dedicated "This floor" option.
+      return floors.filter((f) => f.floorId !== sourceFloorId)
+    }
     return floors.filter(
       (f) => f.floorId !== sourceFloorId && emptyFloorIds.includes(f.floorId),
     )
@@ -53,7 +56,8 @@ export function DuplicateFloorModal({
   useEffect(() => {
     if (!open) return
     setError(null)
-    setTargetMode('new')
+    // Selected rows: default to same-floor copy (C1→C2). Full-floor: new floor.
+    setTargetMode(selectedMode ? 'same' : 'new')
     setExistingFloorId('')
     const taken = new Set(floors.map((f) => f.floorId))
     const base =
@@ -118,8 +122,23 @@ export function DuplicateFloorModal({
       await qc.invalidateQueries({ queryKey: ['reports', projectId] })
       onCopied?.(res)
       onClose()
-      const sameFloor = res.targetFloorId === sourceFloorId
-      if (!sameFloor) {
+      const sameFloor =
+        Boolean(sourceFloorId) && res.targetFloorId === sourceFloorId
+      const marks = res.instances
+        .map((inst) => inst.mark)
+        .filter(Boolean)
+        .slice(0, 8)
+      const marksNote =
+        marks.length > 0
+          ? ` New mark${marks.length === 1 ? '' : 's'}: ${marks.join(', ')}${
+              res.instances.length > marks.length ? '…' : ''
+            }.`
+          : ''
+      if (sameFloor) {
+        alert(
+          `Duplicated ${res.copiedCount} instance${res.copiedCount === 1 ? '' : 's'} on ${res.targetFloorId}.${marksNote} Grid placement was cleared — place at grid if needed.`,
+        )
+      } else {
         alert(
           `Copied ${res.copiedCount} instance${res.copiedCount === 1 ? '' : 's'} to ${res.targetFloorId}. Quantities recalculated on the target floor.`,
         )
@@ -154,13 +173,6 @@ export function DuplicateFloorModal({
       </p>
 
       <div className="flex gap-2 mb-3 flex-wrap">
-        <GhostButton
-          type="button"
-          className={`!text-xs !py-1.5 ${targetMode === 'new' ? '!border-signal' : ''}`}
-          onClick={() => setTargetMode('new')}
-        >
-          New floor
-        </GhostButton>
         {selectedMode ? (
           <GhostButton
             type="button"
@@ -172,6 +184,13 @@ export function DuplicateFloorModal({
         ) : null}
         <GhostButton
           type="button"
+          className={`!text-xs !py-1.5 ${targetMode === 'new' ? '!border-signal' : ''}`}
+          onClick={() => setTargetMode('new')}
+        >
+          New floor
+        </GhostButton>
+        <GhostButton
+          type="button"
           className={`!text-xs !py-1.5 ${targetMode === 'existing' ? '!border-signal' : ''}`}
           onClick={() => setTargetMode('existing')}
         >
@@ -181,9 +200,9 @@ export function DuplicateFloorModal({
 
       {targetMode === 'same' ? (
         <p className="text-xs text-steel border border-steel-border bg-panel px-3 py-2">
-          Copies stay on {sourceFloorId}. Marks follow the existing prefix+number
-          convention. Grid intersections are not copied — you can place each copy
-          next, or leave it unplaced.
+          Copies stay on <b className="text-ink">{sourceFloorId}</b>. Each copy
+          gets the next mark (e.g. C1→C2). Grid refs are cleared so you can place
+          at a new intersection, or leave unplaced.
         </p>
       ) : targetMode === 'new' ? (
         <div className="grid grid-cols-2 gap-2">
@@ -233,7 +252,6 @@ export function DuplicateFloorModal({
             {candidateFloors.map((f) => (
               <option key={f.id} value={f.floorId}>
                 {f.floorId} — {f.label}
-                {f.floorId === sourceFloorId ? ' (this floor)' : ''}
               </option>
             ))}
           </select>
@@ -260,7 +278,11 @@ export function DuplicateFloorModal({
             mut.mutate()
           }}
         >
-          {mut.isPending ? 'Copying…' : 'Duplicate'}
+          {mut.isPending
+            ? 'Copying…'
+            : targetMode === 'same'
+              ? 'Duplicate on this floor'
+              : 'Duplicate'}
         </PrimaryButton>
       </div>
     </Modal>

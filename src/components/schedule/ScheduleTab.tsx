@@ -49,7 +49,7 @@ import {
   type PointPlacementResult,
   type SpanPlacementResult,
 } from '../modals/GridPlacementModal'
-import { IfcImportPanel } from './IfcImportPanel'
+// import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
 import {
   MeasureSessionModal,
@@ -61,16 +61,16 @@ import { getMeasureTargets } from '../../constants/measureTraceableFields'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
-const IFC_IMPORT_KEYS = new Set([
-  'WALLS',
-  'SLABS',
-  'PAD_FOOTING',
-  'STRIP_FOOTING',
-  'PILE_CAP',
-  'RAFT',
-  'COLUMNS',
-  'BEAMS',
-])
+// const IFC_IMPORT_KEYS = new Set([
+//   'WALLS',
+//   'SLABS',
+//   'PAD_FOOTING',
+//   'STRIP_FOOTING',
+//   'PILE_CAP',
+//   'RAFT',
+//   'COLUMNS',
+//   'BEAMS',
+// ])
 
 function formatQty(v: unknown, dec: number): string {
   if (v == null || typeof v !== 'number' || Number.isNaN(v)) return '—'
@@ -298,6 +298,20 @@ export function ScheduleTab({
     onSuccess: invalidate,
   })
 
+  const bulkDelMut = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await runImmediate(async () => {
+        for (const id of ids) {
+          await deleteInstance(projectId, id)
+        }
+      })
+    },
+    onSuccess: () => {
+      setSelectedIds(new Set())
+      invalidate()
+    },
+  })
+
   const schedulePatch = useCallback(
     (id: string, patch: Record<string, unknown>) => {
       schedule({ kind: 'instance', projectId, instanceId: id, patch })
@@ -418,6 +432,26 @@ export function ScheduleTab({
             Duplicate selected…
             {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </GhostButton>
+          <GhostButton
+            disabled={selectedIds.size === 0 || bulkDelMut.isPending}
+            className="!text-xs !py-2 !text-danger"
+            onClick={() => {
+              const n = selectedIds.size
+              if (
+                !confirm(
+                  `Delete ${n} selected row${n === 1 ? '' : 's'}? This cannot be undone.`,
+                )
+              ) {
+                return
+              }
+              bulkDelMut.mutate([...selectedIds])
+            }}
+          >
+            {bulkDelMut.isPending
+              ? 'Deleting…'
+              : `Delete selected${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+          </GhostButton>
+          {/* IFC import temporarily hidden from all schedule sections
           {IFC_IMPORT_KEYS.has(elementKey) ? (
             <IfcImportPanel
               projectId={projectId}
@@ -426,6 +460,7 @@ export function ScheduleTab({
               onCommitted={invalidate}
             />
           ) : null}
+          */}
           {POINT_PLACEMENT_KEYS.has(elementKey) && (
             <GhostButton
               disabled={addMut.isPending}
