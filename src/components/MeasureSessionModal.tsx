@@ -254,7 +254,6 @@ export function MeasureSessionModal({
     [instance.elementKey, instance.shape, fieldKey],
   )
 
-  const isPair = focus?.target.kind === 'geometryPair'
   const [pairFill, setPairFill] = useState<PairFillMode>('both')
   const [modeOverride, setModeOverride] = useState<MeasureMode | null>(null)
   const [circleInput, setCircleInput] = useState<'centerRadius' | 'threePoint'>(
@@ -828,19 +827,14 @@ export function MeasureSessionModal({
       clickedKey &&
       (isLengthMode(activeMode) || payload.type === 'LINEAR')
     ) {
-      const len =
-        activeMode === 'CURVED_PATH' || payload.type === 'CURVED_PATH'
-          ? curvedPathMetres(payload.points, scale, unit)
-          : linearMetres(payload.points, scale, unit)
+      // CURVED_PATH / ARC already handled above — remaining length modes are linear.
+      const len = linearMetres(payload.points, scale, unit)
       if (len == null) {
         setStatusMsg('Could not read length — try again')
         return
       }
       pushOverlay({
-        kind:
-          activeMode === 'CURVED_PATH' || payload.type === 'CURVED_PATH'
-            ? 'CURVED'
-            : 'LINEAR',
+        kind: 'LINEAR',
         points: payload.points,
         valueLabel: `${len} m`,
       })
@@ -852,27 +846,15 @@ export function MeasureSessionModal({
 
     if (
       target.kind === 'geometry' &&
-      (isLengthMode(activeMode) ||
-        payload.type === 'LINEAR' ||
-        payload.type === 'CURVED_PATH')
+      (isLengthMode(activeMode) || payload.type === 'LINEAR')
     ) {
-      const len =
-        activeMode === 'ARC'
-          ? arcLengthMetres(payload.points, scale, unit)
-          : activeMode === 'CURVED_PATH' || payload.type === 'CURVED_PATH'
-            ? curvedPathMetres(payload.points, scale, unit)
-            : linearMetres(payload.points, scale, unit)
+      const len = linearMetres(payload.points, scale, unit)
       if (len == null) {
         setStatusMsg('Could not read length — try again')
         return
       }
       pushOverlay({
-        kind:
-          activeMode === 'CURVED_PATH' ||
-          payload.type === 'CURVED_PATH' ||
-          activeMode === 'ARC'
-            ? 'CURVED'
-            : 'LINEAR',
+        kind: 'LINEAR',
         points: payload.points,
         valueLabel: `${len} m`,
       })
@@ -1025,7 +1007,7 @@ export function MeasureSessionModal({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            {isPair && focus.clickedLabel ? (
+            {focus?.target.kind === 'geometryPair' && focus.clickedLabel ? (
               <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-steel-border bg-bg/50 px-3 py-2 text-[11px]">
                 <span className="text-steel">Fill:</span>
                 <button
