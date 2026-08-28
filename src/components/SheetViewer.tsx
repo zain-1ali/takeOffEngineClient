@@ -34,6 +34,15 @@ import {
 } from "../lib/measurementMath";
 import type { MeasureSessionOverlay } from "../lib/measureSessionOverlays";
 import {
+  MEASURE_SNAP_RADIUS_PX,
+  applyMeasureSnap,
+  type MeasureSnapKind,
+} from "../lib/measureSnap";
+import {
+  getCachedSheetImage,
+  loadSheetImageForSnap,
+} from "../lib/sheetImageCache";
+import {
   ellipseFromCorners,
   normalizeRectangle,
   translateMarkupData,
@@ -278,6 +287,12 @@ export function SheetViewer({
   const [draftPoints, setDraftPoints] = useState<ImagePoint[]>([]);
   const [draftScreen, setDraftScreen] = useState<ScreenPoint[]>([]);
   const [cursorScreen, setCursorScreen] = useState<ScreenPoint | null>(null);
+  /** Screen position of active vertex/corner snap (null when not snapping). */
+  const [snapScreen, setSnapScreen] = useState<ScreenPoint | null>(null);
+  const [snapKind, setSnapKind] = useState<MeasureSnapKind | null>(null);
+  const sheetImageRef = useRef<HTMLImageElement | null>(null);
+  const sessionOverlaysRef = useRef(sessionOverlays);
+  sessionOverlaysRef.current = sessionOverlays;
   const [itemsScreen, setItemsScreen] = useState<
     Array<{
       id: string;
@@ -433,6 +448,18 @@ export function SheetViewer({
     };
   }, [imageUrl, projectDraft, projectItems, projectAiRoomPins]);
 
+  // Raster for artwork corner / intersection snap (CORS-safe getImageData).
+  useEffect(() => {
+    let cancelled = false;
+    sheetImageRef.current = getCachedSheetImage(imageUrl);
+    void loadSheetImageForSnap(imageUrl).then((img) => {
+      if (!cancelled) sheetImageRef.current = img;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
+
   useEffect(() => {
     const viewer = viewerRef.current;
     if (viewer) {
@@ -503,6 +530,8 @@ export function SheetViewer({
     setDraftPoints([]);
     setDraftScreen([]);
     setCursorScreen(null);
+    setSnapScreen(null);
+    setSnapKind(null);
     setMarkupDraft(null);
     drawingRef.current = false;
     onDraftMeasureChangeRef.current?.(null);
@@ -544,9 +573,12 @@ export function SheetViewer({
         return;
       }
       event.preventDefault();
+      draftPointsRef.current = [];
       setDraftPoints([]);
       setDraftScreen([]);
       setCursorScreen(null);
+      setSnapScreen(null);
+      setSnapKind(null);
       setMarkupDraft(null);
       drawingRef.current = false;
       onDraftMeasureChangeRef.current?.(null);
@@ -559,10 +591,28 @@ export function SheetViewer({
   }, [tool]);
 
   function clearDraft(): void {
+    draftPointsRef.current = [];
     setDraftPoints([]);
     setDraftScreen([]);
     setCursorScreen(null);
+    setSnapScreen(null);
+    setSnapKind(null);
     onDraftMeasureChangeRef.current?.(null);
+  }
+
+  function resolveSnap(rawImage: ImagePoint) {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return { point: rawImage, snapped: false as const, kind: null };
+    }
+    return applyMeasureSnap(
+      viewer,
+      rawImage,
+      sessionOverlaysRef.current,
+      draftPointsRef.current,
+      MEASURE_SNAP_RADIUS_PX,
+      sheetImageRef.current
+    );
   }
 
   function emitDraftMeasure(
@@ -926,12 +976,12 @@ export function SheetViewer({
       return;
     }
 
-    const imagePoint = screenEventToImagePoint(
+    const rawImage = screenEventToImagePoint(
       viewer,
       event.evt.clientX,
       event.evt.clientY
     );
-    if (!imagePoint) {
+    if (!rawImage) {
       return;
     }
 
@@ -948,7 +998,7 @@ export function SheetViewer({
     }
 
     if (tool === "text") {
-      onTextPlaceRef.current?.(imagePoint);
+      onTextPlaceRef.current?.(rawImage);
       return;
     }
 
@@ -956,12 +1006,15 @@ export function SheetViewer({
       if (tool === "calibrate" && draftPointsRef.current.length >= 2) {
         return;
       }
-      addMeasurePoint(imagePoint);
+      const { point } = resolveSnap(rawImage);
+      addMeasurePoint(point);
       return;
     }
 
     if (isDragDrawTool(tool)) {
-      beginMarkup(imagePoint);
+      const point =
+        tool === "measureRect" ? resolveSnap(rawImage).point : rawImage;
+      beginMarkup(point);
     }
   }
 
@@ -971,49 +1024,68 @@ export function SheetViewer({
       return;
     }
 
-    // Live rubber-band from last vertex to cursor while tracing.
+    // Live rubber-band + vertex / artwork-corner snap while measuring.
     if (
-      isClickTraceTool(tool) &&
-      draftPointsRef.current.length > 0 &&
+      (isClickTraceTool(tool) || tool === "calibrate" || tool === "count") &&
       !inputBlockedRef.current
     ) {
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect) {
-        setCursorScreen({
-          x: event.evt.clientX - rect.left,
-          y: event.evt.clientY - rect.top,
-        });
-      }
-      const imagePoint = screenEventToImagePoint(
+      const rawImage = screenEventToImagePoint(
         viewer,
         event.evt.clientX,
         event.evt.clientY
       );
-      if (
-        imagePoint &&
-        (tool === "polyline" ||
-          tool === "curvedPath" ||
-          tool === "area" ||
-          tool === "deduction" ||
-          tool === "circle" ||
-          tool === "circle3" ||
-          tool === "arc" ||
-          tool === "angle")
-      ) {
-        emitDraftMeasure(draftPointsRef.current, imagePoint);
+      if (rawImage) {
+        const { point, snapped, kind } = resolveSnap(rawImage);
+        const screenPt = imagePointToScreenPoint(viewer, point);
+        if (rect && draftPointsRef.current.length > 0) {
+          setCursorScreen(screenPt);
+        }
+        setSnapScreen(snapped ? screenPt : null);
+        setSnapKind(snapped ? kind : null);
+        if (
+          draftPointsRef.current.length > 0 &&
+          (tool === "polyline" ||
+            tool === "curvedPath" ||
+            tool === "area" ||
+            tool === "deduction" ||
+            tool === "circle" ||
+            tool === "circle3" ||
+            tool === "arc" ||
+            tool === "angle")
+        ) {
+          emitDraftMeasure(draftPointsRef.current, point);
+        }
+      } else {
+        setSnapScreen(null);
+        setSnapKind(null);
       }
+    } else if (!drawingRef.current || tool !== "measureRect") {
+      setSnapScreen(null);
+      setSnapKind(null);
     }
 
     if (!drawingRef.current || !isDragDrawTool(tool)) {
       return;
     }
-    const imagePoint = screenEventToImagePoint(
+    const rawImage = screenEventToImagePoint(
       viewer,
       event.evt.clientX,
       event.evt.clientY
     );
-    if (imagePoint) {
-      updateMarkupDrag(imagePoint);
+    if (rawImage) {
+      if (tool === "measureRect") {
+        const { point, snapped, kind } = resolveSnap(rawImage);
+        setSnapScreen(
+          snapped ? imagePointToScreenPoint(viewer, point) : null
+        );
+        setSnapKind(snapped ? kind : null);
+        updateMarkupDrag(point);
+      } else {
+        setSnapScreen(null);
+        setSnapKind(null);
+        updateMarkupDrag(rawImage);
+      }
     }
   }
 
@@ -1690,6 +1762,39 @@ export function SheetViewer({
                 listening={false}
               />
             ))}
+            {snapScreen ? (
+              <Group listening={false}>
+                <Circle
+                  x={snapScreen.x}
+                  y={snapScreen.y}
+                  radius={MEASURE_SNAP_RADIUS_PX}
+                  stroke={
+                    snapKind === "vertex"
+                      ? "#38bdf8"
+                      : snapKind === "intersection"
+                        ? "#a78bfa"
+                        : "#fbbf24"
+                  }
+                  strokeWidth={1.5}
+                  dash={snapKind === "vertex" ? [4, 3] : undefined}
+                  opacity={0.9}
+                />
+                <Circle
+                  x={snapScreen.x}
+                  y={snapScreen.y}
+                  radius={5}
+                  fill={
+                    snapKind === "vertex"
+                      ? "#38bdf8"
+                      : snapKind === "intersection"
+                        ? "#a78bfa"
+                        : "#fbbf24"
+                  }
+                  stroke="#0c1b2a"
+                  strokeWidth={1.5}
+                />
+              </Group>
+            ) : null}
           </Layer>
 
           {/* Markup objects (selectable / draggable in select mode) */}
@@ -1809,6 +1914,46 @@ function renderSessionOverlay(
           fill={`${color}55`}
         />
         {vertexDots}
+        {overlay.valueLabel || overlay.perimeterLabel ? (
+          <Group x={c.x + 8} y={c.y - 8} listening={false}>
+            <Rect
+              x={-4}
+              y={-10}
+              width={120}
+              height={
+                (overlay.valueLabel ? 1 : 0) +
+                  (overlay.perimeterLabel ? 1 : 0) >
+                1
+                  ? 32
+                  : 18
+              }
+              fill="rgba(28,25,23,0.72)"
+              cornerRadius={2}
+            />
+            {overlay.valueLabel ? (
+              <Text
+                x={0}
+                y={-4}
+                text={`Area ${overlay.valueLabel}`}
+                fontSize={11}
+                fontFamily="ui-monospace, monospace"
+                fill="#fff7ed"
+                padding={4}
+              />
+            ) : null}
+            {overlay.perimeterLabel ? (
+              <Text
+                x={0}
+                y={overlay.valueLabel ? 9 : -4}
+                text={`Perimeter ${overlay.perimeterLabel}`}
+                fontSize={11}
+                fontFamily="ui-monospace, monospace"
+                fill="#fff7ed"
+                padding={4}
+              />
+            ) : null}
+          </Group>
+        ) : null}
       </Group>
     );
   }
@@ -1860,6 +2005,20 @@ function renderSessionOverlay(
     (overlay.kind === "AREA" || overlay.kind === "DEDUCTION") &&
     flat.length >= 6
   ) {
+    let cx = 0;
+    let cy = 0;
+    for (const p of screenPts) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= screenPts.length;
+    cy /= screenPts.length;
+    const labelLines = [
+      overlay.valueLabel ? `Area ${overlay.valueLabel}` : null,
+      overlay.perimeterLabel
+        ? `Perimeter ${overlay.perimeterLabel}`
+        : null,
+    ].filter(Boolean) as string[];
     return (
       <Group key={overlay.id} listening={false}>
         <Line
@@ -1873,6 +2032,35 @@ function renderSessionOverlay(
           }
         />
         {vertexDots}
+        {labelLines.length > 0 ? (
+          <Group x={cx} y={cy} listening={false}>
+            <Rect
+              x={-4}
+              y={-10}
+              width={Math.max(
+                ...labelLines.map((t) => t.length * 6.2),
+                40
+              ) + 8}
+              height={labelLines.length * 13 + 6}
+              fill="rgba(28,25,23,0.72)"
+              cornerRadius={2}
+              offsetX={0}
+              offsetY={0}
+            />
+            {labelLines.map((line, i) => (
+              <Text
+                key={`${overlay.id}-lbl-${i}`}
+                x={0}
+                y={i * 13 - 4}
+                text={line}
+                fontSize={11}
+                fontFamily="ui-monospace, monospace"
+                fill="#fff7ed"
+                padding={4}
+              />
+            ))}
+          </Group>
+        ) : null}
       </Group>
     );
   }

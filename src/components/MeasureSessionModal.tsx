@@ -25,7 +25,7 @@ import {
 } from '../lib/measureAreaParents'
 import {
   defaultOverlayName,
-  MEASURE_OVERLAY_COLOR,
+  nextMeasureOverlayColor,
   overlayKindFromMeasure,
   type MeasureSessionOverlay,
 } from '../lib/measureSessionOverlays'
@@ -35,6 +35,7 @@ import {
   type MeasureMode,
   type MeasureTarget,
 } from '../constants/measureTraceableFields'
+import { MeasureColorSwatchPicker } from './MeasureColorSwatchPicker'
 import { SheetViewer } from './SheetViewer'
 import { NumericInput } from './ui'
 import type { ImagePoint } from '../lib/measurementMath'
@@ -262,6 +263,8 @@ export function MeasureSessionModal({
   const [areaParents, setAreaParents] = useState<MeasureAreaParent[]>([])
   const [deductionParentId, setDeductionParentId] = useState<string>('')
   const [overlays, setOverlays] = useState<MeasureSessionOverlay[]>([])
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null)
+  const draftTraceColor = nextMeasureOverlayColor(overlays.length)
   const [countDraftPoints, setCountDraftPoints] = useState<ImagePoint[]>([])
   const [localGeo, setLocalGeo] = useState<Record<string, unknown>>(
     () => ({ ...(instance.geometry || {}) }),
@@ -330,6 +333,7 @@ export function MeasureSessionModal({
     setAreaParents(loaded)
     setDeductionParentId(loaded[0]?.id ?? '')
     setOverlays([])
+    setColorPickerId(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: geometry/count sync only on open/row change
   }, [open, instance.id, fieldKey])
 
@@ -399,12 +403,14 @@ export function MeasureSessionModal({
     grossM2: number,
     kindLabel: string,
     extraGeometry?: Record<string, unknown>,
+    perimeterM?: number | null,
   ) {
     const n = areaParents.length + 1
     const parent: MeasureAreaParent = {
       id: newMeasureId('area'),
       label: `${kindLabel} ${n}`,
       grossM2,
+      perimeterM: perimeterM ?? null,
       deductions: [],
     }
     const next = [...areaParents, parent]
@@ -417,6 +423,7 @@ export function MeasureSessionModal({
     kind: MeasureSessionOverlay['kind']
     points: ImagePoint[]
     valueLabel: string
+    perimeterLabel?: string | null
     name?: string
   }) {
     setOverlays((prev) => {
@@ -428,8 +435,9 @@ export function MeasureSessionModal({
           kind: args.kind,
           name: args.name ?? defaultOverlayName(args.kind, kindCount),
           valueLabel: args.valueLabel,
+          perimeterLabel: args.perimeterLabel ?? null,
           points: args.points.map((p) => ({ ...p })),
-          color: MEASURE_OVERLAY_COLOR,
+          color: nextMeasureOverlayColor(prev.length),
           visible: true,
         },
       ]
@@ -446,11 +454,11 @@ export function MeasureSessionModal({
         name: 'Count (draft)',
         valueLabel: String(countDraftPoints.length),
         points: countDraftPoints,
-        color: MEASURE_OVERLAY_COLOR,
+        color: draftTraceColor,
         visible: true,
       },
     ]
-  }, [overlays, countDraftPoints])
+  }, [overlays, countDraftPoints, draftTraceColor])
 
   function handleDraftMeasureChange(
     draft: {
@@ -715,23 +723,26 @@ export function MeasureSessionModal({
         setStatusMsg('Could not solve circle — try again')
         return
       }
+      const circ = Math.round(2 * Math.PI * r * 1000) / 1000
+      const periLabel = `${circ.toFixed(2)} m`
       pushOverlay({
         kind: 'CIRCLE',
         points: payload.points,
         valueLabel: `${area.toFixed(2)} m²`,
+        perimeterLabel: periLabel,
       })
       if (target.kind === 'geometryPair' && pairFill === 'single' && clickedKey) {
-        registerAreaParent(area, 'Circle', { [clickedKey]: r })
+        registerAreaParent(area, 'Circle', { [clickedKey]: r }, circ)
         setStatusMsg(
           `${focus.clickedLabel || clickedKey}=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`,
         )
       } else if (target.kind === 'geometry') {
-        registerAreaParent(area, 'Circle', { [target.key]: r })
+        registerAreaParent(area, 'Circle', { [target.key]: r }, circ)
         setStatusMsg(
           `${target.label}=${r.toFixed(2)} m (radius) · Area ${area.toFixed(2)} m²`,
         )
       } else {
-        registerAreaParent(area, 'Circle')
+        registerAreaParent(area, 'Circle', undefined, circ)
         setStatusMsg(`r=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`)
       }
       setPhase('pan')
@@ -805,14 +816,21 @@ export function MeasureSessionModal({
       const gross =
         polygonAreaMetres2(payload.points, scale, unit) ??
         Math.round(sides.a * sides.b * 1000) / 1000
-      registerAreaParent(gross, 'Area', {
-        [target.keys[0]]: sides.a,
-        [target.keys[1]]: sides.b,
-      })
+      const peri = perimeterMetres(payload.points, scale, unit)
+      registerAreaParent(
+        gross,
+        'Area',
+        {
+          [target.keys[0]]: sides.a,
+          [target.keys[1]]: sides.b,
+        },
+        peri,
+      )
       pushOverlay({
         kind: overlayKindFromMeasure(payload.type, activeMode),
         points: payload.points,
         valueLabel: `${gross.toFixed(2)} m²`,
+        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
       })
       setStatusMsg(
         `${target.labels[0]}=${sides.a} m · ${target.labels[1]}=${sides.b} m${areaStatusSuffix(payload.points, scale, unit)}`,
@@ -877,11 +895,13 @@ export function MeasureSessionModal({
       const gross =
         polygonAreaMetres2(payload.points, scale, unit) ??
         Math.round(sides.a * sides.b * 1000) / 1000
-      registerAreaParent(gross, 'Area', { [target.key]: value })
+      const peri = perimeterMetres(payload.points, scale, unit)
+      registerAreaParent(gross, 'Area', { [target.key]: value }, peri)
       pushOverlay({
         kind: 'AREA',
         points: payload.points,
         valueLabel: `${gross.toFixed(2)} m²`,
+        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
       })
       setStatusMsg(
         `${target.label}=${value} m${areaStatusSuffix(payload.points, scale, unit)}`,
@@ -1261,8 +1281,22 @@ export function MeasureSessionModal({
                             onClick={() => setDeductionParentId(p.id)}
                           >
                             <div className="font-medium text-ink">{p.label}</div>
-                            <div className="font-mono text-steel">
-                              Gross {p.grossM2.toFixed(2)} m²
+                            <div className="mt-0.5 space-y-0.5 font-mono text-[11px]">
+                              <div>
+                                <span className="text-steel">Area </span>
+                                <span className="text-ink">
+                                  {p.grossM2.toFixed(2)} m²
+                                </span>
+                              </div>
+                              {p.perimeterM != null &&
+                              Number.isFinite(p.perimeterM) ? (
+                                <div>
+                                  <span className="text-steel">Perimeter </span>
+                                  <span className="text-ink">
+                                    {p.perimeterM.toFixed(2)} m
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
                             {p.deductions.length > 0 ? (
                               <ul className="mt-1 space-y-0.5 border-l-2 border-danger/40 pl-1.5">
@@ -1294,7 +1328,7 @@ export function MeasureSessionModal({
                 imageUrl={resolveMediaUrl(sheet.originalFileUrl)}
                 className="h-full w-full"
                 tool={viewerTool}
-                markupStyle={{ color: MEASURE_OVERLAY_COLOR, strokeWidth: 3 }}
+                markupStyle={{ color: draftTraceColor, strokeWidth: 3 }}
                 sessionOverlays={displayOverlays}
                 onCalibrationMeasured={({ pixelDistance }) => {
                   if (pixelDistance > 0) setCalPending({ pixelDistance })
@@ -1323,6 +1357,19 @@ export function MeasureSessionModal({
                         style={{ borderLeftWidth: 3, borderLeftColor: o.color }}
                       >
                         <div className="flex items-start gap-1.5">
+                          <button
+                            type="button"
+                            className="mt-0.5 h-4 w-4 shrink-0 border-2 border-steel-border/80 hover:border-white/70"
+                            style={{ backgroundColor: o.color }}
+                            title="Change color"
+                            aria-label="Change measurement color"
+                            aria-expanded={colorPickerId === o.id}
+                            onClick={() =>
+                              setColorPickerId((id) =>
+                                id === o.id ? null : o.id,
+                              )
+                            }
+                          />
                           <div className="min-w-0 flex-1">
                             <input
                               className="w-full border-0 bg-transparent text-[12px] font-medium text-white outline-none focus:ring-0"
@@ -1337,12 +1384,43 @@ export function MeasureSessionModal({
                               }}
                               aria-label="Measurement name"
                             />
-                            <div
-                              className="mt-0.5 font-mono text-[13px] font-semibold"
-                              style={{ color: o.color }}
-                            >
-                              {o.valueLabel}
-                            </div>
+                            {o.kind === 'AREA' ||
+                            o.kind === 'CIRCLE' ||
+                            o.perimeterLabel ? (
+                              <div className="mt-1 space-y-0.5 font-mono text-[12px]">
+                                <div>
+                                  <span className="text-[10px] uppercase tracking-wide text-steel">
+                                    Area
+                                  </span>
+                                  <div
+                                    className="font-semibold leading-tight"
+                                    style={{ color: o.color }}
+                                  >
+                                    {o.valueLabel}
+                                  </div>
+                                </div>
+                                {o.perimeterLabel ? (
+                                  <div>
+                                    <span className="text-[10px] uppercase tracking-wide text-steel">
+                                      Perimeter
+                                    </span>
+                                    <div
+                                      className="font-semibold leading-tight"
+                                      style={{ color: o.color }}
+                                    >
+                                      {o.perimeterLabel}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div
+                                className="mt-0.5 font-mono text-[13px] font-semibold"
+                                style={{ color: o.color }}
+                              >
+                                {o.valueLabel}
+                              </div>
+                            )}
                           </div>
                           <button
                             type="button"
@@ -1391,6 +1469,19 @@ export function MeasureSessionModal({
                             </span>
                           </button>
                         </div>
+                        {colorPickerId === o.id ? (
+                          <MeasureColorSwatchPicker
+                            value={o.color}
+                            onChange={(color) => {
+                              setOverlays((prev) =>
+                                prev.map((x) =>
+                                  x.id === o.id ? { ...x, color } : x,
+                                ),
+                              )
+                            }}
+                            onClose={() => setColorPickerId(null)}
+                          />
+                        ) : null}
                       </li>
                     ))}
                   </ul>

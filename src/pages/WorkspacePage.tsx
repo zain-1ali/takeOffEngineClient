@@ -14,6 +14,7 @@ import { ModelTab } from '../components/model/ModelTab'
 import { ElementReportsTab } from '../components/reports/ElementReportsTab'
 import { ProjectReportsView } from '../components/reports/ProjectReportsView'
 import { ElementRegisterView } from '../components/register/ElementRegisterView'
+import { DrawingsRegisterView } from '../components/drawings/DrawingsRegisterView'
 import { ELEMENT_ENGINES } from '../elementEngines'
 import { findElement, type FlowStepId } from '../constants/elementTree'
 import type { ElementDef } from '../constants/elementTree'
@@ -57,6 +58,9 @@ export default function WorkspacePage() {
   const element = useMemo(() => findElement(elementKey), [elementKey])
   const showProjectReports = activeStep === 'reports'
   const showElementRegister = activeStep === 'register'
+  const showDrawingsRegister = activeStep === 'drawings'
+  const hideElementWorkspace =
+    showProjectReports || showElementRegister || showDrawingsRegister
 
   function onStep(id: FlowStepId) {
     if (id === 'project') setModal('project')
@@ -65,6 +69,8 @@ export default function WorkspacePage() {
     else if (id === 'model') {
       setActiveStep('model')
       setTab('schedule')
+    } else if (id === 'drawings') {
+      setActiveStep('drawings')
     } else if (id === 'register') {
       setActiveStep('register')
     } else if (id === 'reports') {
@@ -112,11 +118,13 @@ export default function WorkspacePage() {
 
       <div className="flex-1 flex min-h-0 border-t border-steel-border">
         <ElementTree
-          selectedKey={showElementRegister ? '' : elementKey}
+          selectedKey={hideElementWorkspace ? '' : elementKey}
           counts={countsQuery.data || {}}
           onSelect={onSelectElement}
           registerActive={showElementRegister}
           onOpenRegister={() => setActiveStep('register')}
+          drawingsActive={showDrawingsRegister}
+          onOpenDrawings={() => setActiveStep('drawings')}
         />
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-bg/20">
@@ -135,13 +143,20 @@ export default function WorkspacePage() {
                 ))}
               </select>
             </label>
-            <FloorDrawingBar projectId={projectId} floorId={currentFloorId} />
+            {!showDrawingsRegister ? (
+              <FloorDrawingBar projectId={projectId} floorId={currentFloorId} />
+            ) : null}
             {showProjectReports && (
               <span className="text-xs text-steel/70">Used when scope is “This floor”</span>
             )}
             {showElementRegister && (
               <span className="text-xs text-steel/70">
                 Master takeoff mapping — units, rules, materials, NRM2, overlap
+              </span>
+            )}
+            {showDrawingsRegister && (
+              <span className="text-xs text-steel/70">
+                Project drawings — one PDF per floor
               </span>
             )}
             <Link
@@ -152,7 +167,7 @@ export default function WorkspacePage() {
             </Link>
           </div>
 
-          {!showProjectReports && !showElementRegister && (
+          {!hideElementWorkspace && (
             <div className="flex gap-0.5 px-6 mt-3 border-b border-steel-border flex-shrink-0">
               {(
                 [
@@ -183,7 +198,17 @@ export default function WorkspacePage() {
           )}
 
           <div className="flex-1 min-h-0 overflow-hidden">
-            {showElementRegister ? (
+            {showDrawingsRegister ? (
+              <DrawingsRegisterView
+                projectId={projectId}
+                floors={floors}
+                onOpenFloor={(fid) => {
+                  setFloorId(fid)
+                  setActiveStep('model')
+                  setTab('schedule')
+                }}
+              />
+            ) : showElementRegister ? (
               <ElementRegisterView
                 onOpenElement={(key) => {
                   setElementKey(key)

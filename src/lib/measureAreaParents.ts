@@ -18,6 +18,11 @@ export type MeasureAreaParent = {
   label: string
   /** Gross traced area in m² (before deductions). */
   grossM2: number
+  /**
+   * Closed plan perimeter in metres (shoelace edge-sum), when traced.
+   * Optional for older saved parents that predate this field.
+   */
+  perimeterM?: number | null
   deductions: MeasureDeduction[]
 }
 
@@ -53,6 +58,13 @@ export function parseMeasureAreaParents(raw: unknown): MeasureAreaParent[] {
     const label = typeof r.label === 'string' ? r.label : null
     const grossM2 = Number(r.grossM2)
     if (!id || !label || !Number.isFinite(grossM2) || grossM2 < 0) continue
+    const periRaw = r.perimeterM
+    const perimeterM =
+      periRaw == null || periRaw === ''
+        ? null
+        : Number.isFinite(Number(periRaw)) && Number(periRaw) >= 0
+          ? Number(periRaw)
+          : null
     const deductions: MeasureDeduction[] = []
     if (Array.isArray(r.deductions)) {
       for (const d of r.deductions) {
@@ -65,7 +77,7 @@ export function parseMeasureAreaParents(raw: unknown): MeasureAreaParent[] {
         deductions.push({ id: did, label: dlabel, areaM2 })
       }
     }
-    out.push({ id, label, grossM2, deductions })
+    out.push({ id, label, grossM2, perimeterM, deductions })
   }
   return out
 }

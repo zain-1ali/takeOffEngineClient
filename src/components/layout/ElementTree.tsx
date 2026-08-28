@@ -12,17 +12,37 @@ export function ElementTree({
   onSelect,
   registerActive = false,
   onOpenRegister,
+  drawingsActive = false,
+  onOpenDrawings,
 }: {
   selectedKey: string
   counts: Record<string, number>
   onSelect: (el: ElementDef) => void
   registerActive?: boolean
   onOpenRegister?: () => void
+  drawingsActive?: boolean
+  onOpenDrawings?: () => void
 }) {
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
 
   return (
     <aside className="w-[230px] flex-shrink-0 border-r border-steel-border overflow-y-auto py-5 bg-bg/40">
+      {onOpenDrawings && (
+        <button
+          type="button"
+          onClick={onOpenDrawings}
+          className={`w-full text-left px-5 py-2 mb-1 border-l-2 text-[13px] font-medium ${
+            drawingsActive
+              ? 'bg-panel border-signal text-ink'
+              : 'border-transparent text-ink/90 hover:bg-panel/60'
+          }`}
+        >
+          Drawings Register
+          <span className="block text-[10px] font-normal text-steel mt-0.5">
+            Floor PDFs · calibrate · replace
+          </span>
+        </button>
+      )}
       {onOpenRegister && (
         <button
           type="button"
