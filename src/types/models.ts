@@ -32,6 +32,8 @@ export interface Sheet {
   projectId: string;
   floorId: string | null;
   name: string;
+  /** User-editable drawing title (defaults to uploaded filename stem). */
+  title: string | null;
   originalFileUrl: string;
   thumbnailFileUrl: string | null;
   sourcePdfUrl: string | null;

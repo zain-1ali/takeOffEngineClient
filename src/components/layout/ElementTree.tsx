@@ -39,7 +39,7 @@ export function ElementTree({
         >
           Drawings Register
           <span className="block text-[10px] font-normal text-steel mt-0.5">
-            Floor PDFs · calibrate · replace
+            Floor PDFs · view · QTO · replace
           </span>
         </button>
       )}

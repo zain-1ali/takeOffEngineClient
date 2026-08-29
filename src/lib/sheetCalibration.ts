@@ -9,9 +9,11 @@ export function sheetIsCalibrated(s: Sheet): boolean {
   )
 }
 
-/** Strip " - Page N" suffix from converted sheet names. */
+/** Prefer `title`, else strip " - Page N" from converted sheet names. */
 export function drawingDisplayName(sheet: Sheet | undefined): string {
   if (!sheet) return '—'
+  const titled = sheet.title?.trim()
+  if (titled) return titled
   const raw = sheet.name?.trim() || ''
   const withoutPage = raw.replace(/\s*-\s*Page\s+\d+\s*$/i, '').trim()
   if (withoutPage) return withoutPage

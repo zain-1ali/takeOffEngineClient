@@ -13,6 +13,7 @@ export interface UploadSheetsResponse {
 
 export interface UpdateSheetInput {
   name?: string
+  title?: string
   discipline?: string
   sortOrder?: number
 }
