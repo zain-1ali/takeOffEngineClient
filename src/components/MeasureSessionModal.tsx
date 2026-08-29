@@ -27,6 +27,9 @@ import {
   defaultOverlayName,
   nextMeasureOverlayColor,
   overlayKindFromMeasure,
+  pasteOverlayFromClipboard,
+  snapshotOverlayForClipboard,
+  type MeasureClipboard,
   type MeasureSessionOverlay,
 } from '../lib/measureSessionOverlays'
 import {
@@ -35,6 +38,12 @@ import {
   type MeasureMode,
   type MeasureTarget,
 } from '../constants/measureTraceableFields'
+import {
+  areaDimensionPatchForFocus,
+  countPatchForTarget,
+  scalarPatchForFocus,
+  type PairFillMode,
+} from '../lib/measurementFieldApply'
 import { MeasureColorSwatchPicker } from './MeasureColorSwatchPicker'
 import { SheetViewer } from './SheetViewer'
 import { NumericInput } from './ui'
@@ -49,9 +58,6 @@ export type MeasureApplyPatch = {
 
 /** Interaction phase: navigate first, then measure. */
 type SessionPhase = 'pan' | 'measure' | 'calibrate'
-
-/** For paired dims: fill only the clicked side, or both via Area/Rectangle. */
-type PairFillMode = 'single' | 'both'
 
 const MEASURE_MODE_OPTIONS: { value: MeasureMode; label: string }[] = [
   { value: 'LINEAR', label: 'Linear' },
@@ -264,6 +270,12 @@ export function MeasureSessionModal({
   const [deductionParentId, setDeductionParentId] = useState<string>('')
   const [overlays, setOverlays] = useState<MeasureSessionOverlay[]>([])
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
+    null,
+  )
+  const [measureClipboard, setMeasureClipboard] =
+    useState<MeasureClipboard | null>(null)
+  const [pasteGeneration, setPasteGeneration] = useState(0)
   const draftTraceColor = nextMeasureOverlayColor(overlays.length)
   const [countDraftPoints, setCountDraftPoints] = useState<ImagePoint[]>([])
   const [localGeo, setLocalGeo] = useState<Record<string, unknown>>(
@@ -334,6 +346,9 @@ export function MeasureSessionModal({
     setDeductionParentId(loaded[0]?.id ?? '')
     setOverlays([])
     setColorPickerId(null)
+    setSelectedOverlayId(null)
+    setMeasureClipboard(null)
+    setPasteGeneration(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: geometry/count sync only on open/row change
   }, [open, instance.id, fieldKey])
 
@@ -443,6 +458,72 @@ export function MeasureSessionModal({
       ]
     })
   }
+
+  function copySelectedMeasurement() {
+    const selected = overlays.find((o) => o.id === selectedOverlayId)
+    if (!selected) {
+      setStatusMsg('Select a measurement to copy')
+      return
+    }
+    setMeasureClipboard(snapshotOverlayForClipboard(selected))
+    setPasteGeneration(0)
+    setStatusMsg(`Copied “${selected.name}” (${selected.valueLabel})`)
+  }
+
+  function pasteMeasurement() {
+    if (!measureClipboard) {
+      setStatusMsg('Nothing to paste — copy a measurement first')
+      return
+    }
+    const nextGen = pasteGeneration + 1
+    const pasted = pasteOverlayFromClipboard(
+      measureClipboard,
+      overlays.length,
+      nextGen,
+      newMeasureId('ov'),
+    )
+    setPasteGeneration(nextGen)
+    setOverlays((prev) => [...prev, pasted])
+    setSelectedOverlayId(pasted.id)
+    setStatusMsg(
+      `Pasted “${pasted.name}” · ${pasted.valueLabel} (independent copy)`,
+    )
+  }
+
+  useEffect(() => {
+    if (!open) return
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName?.toLowerCase()
+      if (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+      const mod = e.ctrlKey || e.metaKey
+      if (!mod) return
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault()
+        copySelectedMeasurement()
+      } else if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault()
+        pasteMeasurement()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // Rebind when copy/paste inputs change so shortcuts see latest state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional fresh closures
+  }, [
+    open,
+    selectedOverlayId,
+    measureClipboard,
+    pasteGeneration,
+    overlays,
+  ])
 
   const displayOverlays: MeasureSessionOverlay[] = useMemo(() => {
     if (countDraftPoints.length === 0) return overlays
@@ -701,16 +782,14 @@ export function MeasureSessionModal({
         points: payload.points,
         valueLabel: `${len.toFixed(2)} m`,
       })
-      if (target.kind === 'geometryPair' && pairFill === 'single' && clickedKey) {
-        applyPatch({ geometry: { [clickedKey]: len } })
+      const patch = scalarPatchForFocus(focus, len)
+      if (patch) {
+        applyPatch(patch)
         setStatusMsg(
-          `${focus.clickedLabel || clickedKey}≈${len.toFixed(2)} m (curved, sampled)`,
+          `${focus.clickedLabel || target.label}≈${len.toFixed(2)} m (curved, sampled)`,
         )
-      } else if (target.kind === 'geometry') {
-        applyPatch({ geometry: { [target.key]: len } })
-        setStatusMsg(`${target.label}≈${len.toFixed(2)} m (curved, sampled)`)
       } else {
-        setStatusMsg(`Curved path ≈ ${len.toFixed(2)} m (sampled)`)
+        setStatusMsg('Curved path cannot apply to this field')
       }
       setPhase('pan')
       return
@@ -731,19 +810,14 @@ export function MeasureSessionModal({
         valueLabel: `${area.toFixed(2)} m²`,
         perimeterLabel: periLabel,
       })
-      if (target.kind === 'geometryPair' && pairFill === 'single' && clickedKey) {
-        registerAreaParent(area, 'Circle', { [clickedKey]: r }, circ)
+      const patch = scalarPatchForFocus(focus, r)
+      if (patch?.geometry) {
+        registerAreaParent(area, 'Circle', patch.geometry, circ)
         setStatusMsg(
-          `${focus.clickedLabel || clickedKey}=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`,
-        )
-      } else if (target.kind === 'geometry') {
-        registerAreaParent(area, 'Circle', { [target.key]: r }, circ)
-        setStatusMsg(
-          `${target.label}=${r.toFixed(2)} m (radius) · Area ${area.toFixed(2)} m²`,
+          `${focus.clickedLabel || target.label}=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`,
         )
       } else {
-        registerAreaParent(area, 'Circle', undefined, circ)
-        setStatusMsg(`r=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`)
+        setStatusMsg('Circle radius cannot apply to this field')
       }
       setPhase('pan')
       return
@@ -760,14 +834,14 @@ export function MeasureSessionModal({
         points: payload.points,
         valueLabel: `${len.toFixed(2)} m`,
       })
-      if (target.kind === 'geometryPair' && pairFill === 'single' && clickedKey) {
-        applyPatch({ geometry: { [clickedKey]: len } })
-        setStatusMsg(`${focus.clickedLabel || clickedKey}=${len.toFixed(2)} m`)
-      } else if (target.kind === 'geometry') {
-        applyPatch({ geometry: { [target.key]: len } })
-        setStatusMsg(`${target.label}=${len.toFixed(2)} m`)
+      const patch = scalarPatchForFocus(focus, len)
+      if (patch) {
+        applyPatch(patch)
+        setStatusMsg(
+          `${focus.clickedLabel || target.label}=${len.toFixed(2)} m`,
+        )
       } else {
-        setStatusMsg(`Arc length ${len.toFixed(2)} m`)
+        setStatusMsg('Arc length cannot apply to this field')
       }
       setPhase('pan')
       return
@@ -790,24 +864,24 @@ export function MeasureSessionModal({
         points: payload.points,
         valueLabel: `${rounded.toFixed(1)}°`,
       })
-      if (target.kind === 'geometry') {
-        applyPatch({ geometry: { [target.key]: rounded } })
-        setStatusMsg(`${target.label}=${rounded.toFixed(1)}°`)
-      } else if (
-        target.kind === 'geometryPair' &&
-        pairFill === 'single' &&
-        clickedKey
-      ) {
-        applyPatch({ geometry: { [clickedKey]: rounded } })
-        setStatusMsg(`${focus.clickedLabel || clickedKey}=${rounded.toFixed(1)}°`)
+      const patch = scalarPatchForFocus(focus, rounded)
+      if (patch) {
+        applyPatch(patch)
+        setStatusMsg(
+          `${focus.clickedLabel || target.label}=${rounded.toFixed(1)}°`,
+        )
       } else {
-        setStatusMsg(`Angle ${rounded.toFixed(1)}°`)
+        setStatusMsg('Angle cannot apply to this field')
       }
       setPhase('pan')
       return
     }
 
-    if (target.kind === 'geometryPair' && pairFill === 'both') {
+    if (
+      target.kind === 'geometryPair' &&
+      pairFill === 'both' &&
+      (isAreaLikeMode(activeMode) || payload.type === 'AREA')
+    ) {
       const sides = polygonPairMetres(payload.points, scale, unit)
       if (!sides) {
         setStatusMsg('Could not read rectangle sides — try again')
@@ -817,13 +891,15 @@ export function MeasureSessionModal({
         polygonAreaMetres2(payload.points, scale, unit) ??
         Math.round(sides.a * sides.b * 1000) / 1000
       const peri = perimeterMetres(payload.points, scale, unit)
+      const patch = areaDimensionPatchForFocus(focus, pairFill, sides)
+      if (!patch?.geometry) {
+        setStatusMsg('Area cannot apply to this field')
+        return
+      }
       registerAreaParent(
         gross,
         'Area',
-        {
-          [target.keys[0]]: sides.a,
-          [target.keys[1]]: sides.b,
-        },
+        patch.geometry,
         peri,
       )
       pushOverlay({
@@ -843,9 +919,45 @@ export function MeasureSessionModal({
       target.kind === 'geometryPair' &&
       pairFill === 'single' &&
       clickedKey &&
+      (isAreaLikeMode(activeMode) || payload.type === 'AREA')
+    ) {
+      const sides = polygonPairMetres(payload.points, scale, unit)
+      if (!sides) {
+        setStatusMsg('Could not read dimensions — try again')
+        return
+      }
+      const sideIndex = target.keys.indexOf(clickedKey)
+      const value = sideIndex === 1 ? sides.b : sides.a
+      const gross =
+        polygonAreaMetres2(payload.points, scale, unit) ??
+        Math.round(sides.a * sides.b * 1000) / 1000
+      const peri = perimeterMetres(payload.points, scale, unit)
+      const patch = areaDimensionPatchForFocus(focus, pairFill, sides)
+      if (!patch?.geometry) {
+        setStatusMsg('Area cannot apply to this field')
+        return
+      }
+      registerAreaParent(gross, 'Area', patch.geometry, peri)
+      pushOverlay({
+        kind: 'AREA',
+        points: payload.points,
+        valueLabel: `${gross.toFixed(2)} m²`,
+        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
+      })
+      setStatusMsg(
+        `${focus.clickedLabel || clickedKey}=${value} m${areaStatusSuffix(payload.points, scale, unit)}`,
+      )
+      setPhase('pan')
+      return
+    }
+
+    if (
+      target.kind === 'geometryPair' &&
+      clickedKey &&
       (isLengthMode(activeMode) || payload.type === 'LINEAR')
     ) {
-      // CURVED_PATH / ARC already handled above — remaining length modes are linear.
+      // CURVED_PATH / ARC already handled above — LINEAR and POLYLINE use
+      // summed straight segments and always apply to the clicked field.
       const len = linearMetres(payload.points, scale, unit)
       if (len == null) {
         setStatusMsg('Could not read length — try again')
@@ -856,7 +968,12 @@ export function MeasureSessionModal({
         points: payload.points,
         valueLabel: `${len} m`,
       })
-      applyPatch({ geometry: { [clickedKey]: len } })
+      const patch = scalarPatchForFocus(focus, len)
+      if (!patch) {
+        setStatusMsg('Length cannot apply to this field')
+        return
+      }
+      applyPatch(patch)
       setStatusMsg(`${focus.clickedLabel || clickedKey}=${len} m`)
       setPhase('pan')
       return
@@ -876,7 +993,12 @@ export function MeasureSessionModal({
         points: payload.points,
         valueLabel: `${len} m`,
       })
-      applyPatch({ geometry: { [target.key]: len } })
+      const patch = scalarPatchForFocus(focus, len)
+      if (!patch) {
+        setStatusMsg('Length cannot apply to this field')
+        return
+      }
+      applyPatch(patch)
       setStatusMsg(`${target.label}=${len} m`)
       setPhase('pan')
       return
@@ -896,7 +1018,12 @@ export function MeasureSessionModal({
         polygonAreaMetres2(payload.points, scale, unit) ??
         Math.round(sides.a * sides.b * 1000) / 1000
       const peri = perimeterMetres(payload.points, scale, unit)
-      registerAreaParent(gross, 'Area', { [target.key]: value }, peri)
+      const patch = areaDimensionPatchForFocus(focus, pairFill, sides)
+      if (!patch?.geometry) {
+        setStatusMsg('Area cannot apply to this field')
+        return
+      }
+      registerAreaParent(gross, 'Area', patch.geometry, peri)
       pushOverlay({
         kind: 'AREA',
         points: payload.points,
@@ -920,12 +1047,16 @@ export function MeasureSessionModal({
         valueLabel: String(n),
       })
     }
+    const patch = countPatchForTarget(focus.target, n)
+    if (patch) {
+      applyPatch(patch)
+    }
     if (focus.target.kind === 'count') {
-      applyPatch({ count: n })
       setStatusMsg(`No. = ${n}`)
     } else if (focus.target.kind === 'geometry') {
-      applyPatch({ geometry: { [focus.target.key]: n } })
       setStatusMsg(`${focus.target.label} = ${n}`)
+    } else {
+      setStatusMsg('Count cannot apply to this field')
     }
     setCountDraft(0)
     setCountDraftPoints([])
@@ -1341,20 +1472,65 @@ export function MeasureSessionModal({
               />
               </div>
               <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-l border-steel-border bg-[#1a1f26] px-2.5 py-3 text-[11px]">
-                <div className="mb-2 text-sm font-semibold text-white">
-                  Measurements
+                <div className="mb-2 flex items-start justify-between gap-1">
+                  <div className="text-sm font-semibold text-white">
+                    Measurements
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
+                      disabled={!selectedOverlayId}
+                      title="Copy selected (Ctrl+C)"
+                      onClick={copySelectedMeasurement}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
+                      disabled={!measureClipboard}
+                      title="Paste offset duplicate (Ctrl+V)"
+                      onClick={pasteMeasurement}
+                    >
+                      Paste
+                    </button>
+                  </div>
                 </div>
+                {measureClipboard ? (
+                  <p className="mb-2 truncate text-[10px] text-steel">
+                    Clipboard: {measureClipboard.sourceName} ·{' '}
+                    {measureClipboard.valueLabel}
+                  </p>
+                ) : null}
                 {overlays.length === 0 ? (
                   <p className="text-steel">
-                    Finished traces stay on the sheet and list here.
+                    Finished traces stay on the sheet and list here. Select one
+                    to Copy, then Paste for an independent offset copy.
                   </p>
                 ) : (
                   <ul className="space-y-2">
                     {overlays.map((o) => (
                       <li
                         key={o.id}
-                        className="relative border border-steel-border/80 bg-[#232a33] pl-2.5 pr-1.5 py-2"
-                        style={{ borderLeftWidth: 3, borderLeftColor: o.color }}
+                        role="button"
+                        tabIndex={0}
+                        className={`relative cursor-pointer border bg-[#232a33] pl-2.5 pr-1.5 py-2 ${
+                          selectedOverlayId === o.id
+                            ? 'border-white/70 ring-1 ring-white/40'
+                            : 'border-steel-border/80'
+                        }`}
+                        style={{
+                          borderLeftWidth: 3,
+                          borderLeftColor: o.color,
+                        }}
+                        onClick={() => setSelectedOverlayId(o.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedOverlayId(o.id)
+                          }
+                        }}
                       >
                         <div className="flex items-start gap-1.5">
                           <button
@@ -1364,11 +1540,13 @@ export function MeasureSessionModal({
                             title="Change color"
                             aria-label="Change measurement color"
                             aria-expanded={colorPickerId === o.id}
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedOverlayId(o.id)
                               setColorPickerId((id) =>
                                 id === o.id ? null : o.id,
                               )
-                            }
+                            }}
                           />
                           <div className="min-w-0 flex-1">
                             <input
@@ -1382,6 +1560,8 @@ export function MeasureSessionModal({
                                   ),
                                 )
                               }}
+                              onClick={(e) => e.stopPropagation()}
+                              onFocus={() => setSelectedOverlayId(o.id)}
                               aria-label="Measurement name"
                             />
                             {o.kind === 'AREA' ||
@@ -1426,7 +1606,8 @@ export function MeasureSessionModal({
                             type="button"
                             className="shrink-0 px-1 py-0.5 text-steel hover:text-white"
                             title={o.visible ? 'Hide on sheet' : 'Show on sheet'}
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation()
                               setOverlays((prev) =>
                                 prev.map((x) =>
                                   x.id === o.id
@@ -1434,7 +1615,7 @@ export function MeasureSessionModal({
                                     : x,
                                 ),
                               )
-                            }
+                            }}
                             aria-label={o.visible ? 'Hide' : 'Show'}
                           >
                             {o.visible ? (
@@ -1457,11 +1638,18 @@ export function MeasureSessionModal({
                             type="button"
                             className="shrink-0 px-1 py-0.5 text-steel hover:text-danger"
                             title="Delete measurement"
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation()
                               setOverlays((prev) =>
                                 prev.filter((x) => x.id !== o.id),
                               )
-                            }
+                              setSelectedOverlayId((id) =>
+                                id === o.id ? null : id,
+                              )
+                              setColorPickerId((id) =>
+                                id === o.id ? null : id,
+                              )
+                            }}
                             aria-label="Delete"
                           >
                             <span className="text-[13px]" aria-hidden>

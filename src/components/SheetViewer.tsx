@@ -287,6 +287,11 @@ export function SheetViewer({
   const [draftPoints, setDraftPoints] = useState<ImagePoint[]>([]);
   const [draftScreen, setDraftScreen] = useState<ScreenPoint[]>([]);
   const [cursorScreen, setCursorScreen] = useState<ScreenPoint | null>(null);
+  /**
+   * Raw mouse position in stage coords — always drawn as a crosshair while
+   * tracing so the snap highlight never replaces the cursor.
+   */
+  const [pointerScreen, setPointerScreen] = useState<ScreenPoint | null>(null);
   /** Screen position of active vertex/corner snap (null when not snapping). */
   const [snapScreen, setSnapScreen] = useState<ScreenPoint | null>(null);
   const [snapKind, setSnapKind] = useState<MeasureSnapKind | null>(null);
@@ -530,6 +535,7 @@ export function SheetViewer({
     setDraftPoints([]);
     setDraftScreen([]);
     setCursorScreen(null);
+    setPointerScreen(null);
     setSnapScreen(null);
     setSnapKind(null);
     setMarkupDraft(null);
@@ -577,6 +583,7 @@ export function SheetViewer({
       setDraftPoints([]);
       setDraftScreen([]);
       setCursorScreen(null);
+      setPointerScreen(null);
       setSnapScreen(null);
       setSnapKind(null);
       setMarkupDraft(null);
@@ -595,6 +602,7 @@ export function SheetViewer({
     setDraftPoints([]);
     setDraftScreen([]);
     setCursorScreen(null);
+    setPointerScreen(null);
     setSnapScreen(null);
     setSnapKind(null);
     onDraftMeasureChangeRef.current?.(null);
@@ -1030,6 +1038,16 @@ export function SheetViewer({
       !inputBlockedRef.current
     ) {
       const rect = containerRef.current?.getBoundingClientRect();
+      const rawPointer =
+        rect != null
+          ? {
+              x: event.evt.clientX - rect.left,
+              y: event.evt.clientY - rect.top,
+            }
+          : null;
+      // Always track the real mouse — snap must not replace this cursor.
+      setPointerScreen(rawPointer);
+
       const rawImage = screenEventToImagePoint(
         viewer,
         event.evt.clientX,
@@ -1037,11 +1055,12 @@ export function SheetViewer({
       );
       if (rawImage) {
         const { point, snapped, kind } = resolveSnap(rawImage);
-        const screenPt = imagePointToScreenPoint(viewer, point);
-        if (rect && draftPointsRef.current.length > 0) {
-          setCursorScreen(screenPt);
+        const snappedScreen = imagePointToScreenPoint(viewer, point);
+        if (draftPointsRef.current.length > 0) {
+          // Rubber-band endpoint follows snap lock (measurement accuracy).
+          setCursorScreen(snappedScreen);
         }
-        setSnapScreen(snapped ? screenPt : null);
+        setSnapScreen(snapped ? snappedScreen : null);
         setSnapKind(snapped ? kind : null);
         if (
           draftPointsRef.current.length > 0 &&
@@ -1061,12 +1080,20 @@ export function SheetViewer({
         setSnapKind(null);
       }
     } else if (!drawingRef.current || tool !== "measureRect") {
+      setPointerScreen(null);
       setSnapScreen(null);
       setSnapKind(null);
     }
 
     if (!drawingRef.current || !isDragDrawTool(tool)) {
       return;
+    }
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setPointerScreen({
+        x: event.evt.clientX - rect.left,
+        y: event.evt.clientY - rect.top,
+      });
     }
     const rawImage = screenEventToImagePoint(
       viewer,
@@ -1435,7 +1462,9 @@ export function SheetViewer({
               : tool === "select"
                 ? "default"
                 : overlayActive
-                  ? "crosshair"
+                  ? pointerScreen
+                    ? "none"
+                    : "crosshair"
                   : "grab",
             pointerEvents: overlayActive ? "auto" : "none",
           }}
@@ -1479,6 +1508,9 @@ export function SheetViewer({
             }
           }}
           onMouseLeave={() => {
+            setPointerScreen(null);
+            setSnapScreen(null);
+            setSnapKind(null);
             if (drawingRef.current && isDragDrawTool(tool)) {
               finishMarkup();
             }
@@ -1792,6 +1824,62 @@ export function SheetViewer({
                   }
                   stroke="#0c1b2a"
                   strokeWidth={1.5}
+                />
+              </Group>
+            ) : null}
+            {/* Drawn crosshair at the real mouse — always shown while tracing,
+                independent of snap. Snap marker above is additive only. */}
+            {pointerScreen &&
+            overlayActive &&
+            !inputBlocked &&
+            (isClickTraceTool(tool) ||
+              tool === "calibrate" ||
+              tool === "count" ||
+              tool === "measureRect") ? (
+              <Group listening={false}>
+                <Line
+                  points={[
+                    pointerScreen.x - 10,
+                    pointerScreen.y,
+                    pointerScreen.x + 10,
+                    pointerScreen.y,
+                  ]}
+                  stroke="#0c1b2a"
+                  strokeWidth={3}
+                  lineCap="round"
+                />
+                <Line
+                  points={[
+                    pointerScreen.x,
+                    pointerScreen.y - 10,
+                    pointerScreen.x,
+                    pointerScreen.y + 10,
+                  ]}
+                  stroke="#0c1b2a"
+                  strokeWidth={3}
+                  lineCap="round"
+                />
+                <Line
+                  points={[
+                    pointerScreen.x - 10,
+                    pointerScreen.y,
+                    pointerScreen.x + 10,
+                    pointerScreen.y,
+                  ]}
+                  stroke="#f8fafc"
+                  strokeWidth={1.5}
+                  lineCap="round"
+                />
+                <Line
+                  points={[
+                    pointerScreen.x,
+                    pointerScreen.y - 10,
+                    pointerScreen.x,
+                    pointerScreen.y + 10,
+                  ]}
+                  stroke="#f8fafc"
+                  strokeWidth={1.5}
+                  lineCap="round"
                 />
               </Group>
             ) : null}

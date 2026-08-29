@@ -4,6 +4,9 @@ import { LAYER_PALETTE_SWATCHES } from './layerColorPalette'
 /** @deprecated Prefer nextMeasureOverlayColor — kept for call sites expecting a default. */
 export const MEASURE_OVERLAY_COLOR = LAYER_PALETTE_SWATCHES[13] // #c2410c
 
+/** Image-space nudge when pasting a duplicated measurement. */
+export const MEASURE_PASTE_OFFSET_PX = 48
+
 /** Next distinct overlay color from the shared Layers palette. */
 export function nextMeasureOverlayColor(existingOverlayCount: number): string {
   const i =
@@ -40,6 +43,16 @@ export type MeasureSessionOverlay = {
   visible: boolean
 }
 
+/** Snapshot for copy/paste — value + geometry, not a live link to the source. */
+export type MeasureClipboard = {
+  kind: MeasureOverlayKind
+  valueLabel: string
+  perimeterLabel: string | null
+  points: ImagePoint[]
+  /** Name of the source measurement (used to build “(copy)” labels). */
+  sourceName: string
+}
+
 export function defaultOverlayName(
   kind: MeasureOverlayKind,
   index: number,
@@ -54,6 +67,49 @@ export function defaultOverlayName(
     DEDUCTION: 'Deduction',
   }
   return `${labels[kind]} ${index}`
+}
+
+/** Strip prior “(copy)” / “(copy N)” suffixes, then tag as a duplicate. */
+export function duplicateOverlayName(
+  sourceName: string,
+  copyIndex = 1,
+): string {
+  const base = sourceName.replace(/\s+\(copy(?:\s+\d+)?\)\s*$/i, '').trim()
+  const label = base || 'Measurement'
+  return copyIndex <= 1 ? `${label} (copy)` : `${label} (copy ${copyIndex})`
+}
+
+export function snapshotOverlayForClipboard(
+  overlay: MeasureSessionOverlay,
+): MeasureClipboard {
+  return {
+    kind: overlay.kind,
+    valueLabel: overlay.valueLabel,
+    perimeterLabel: overlay.perimeterLabel ?? null,
+    points: overlay.points.map((p) => ({ ...p })),
+    sourceName: overlay.name,
+  }
+}
+
+/** Independent duplicate: same value/type, points nudged — not live-linked. */
+export function pasteOverlayFromClipboard(
+  clipboard: MeasureClipboard,
+  existingOverlayCount: number,
+  copyIndex: number,
+  newId: string,
+): MeasureSessionOverlay {
+  const dx = MEASURE_PASTE_OFFSET_PX * copyIndex
+  const dy = MEASURE_PASTE_OFFSET_PX * copyIndex
+  return {
+    id: newId,
+    kind: clipboard.kind,
+    name: duplicateOverlayName(clipboard.sourceName, copyIndex),
+    valueLabel: clipboard.valueLabel,
+    perimeterLabel: clipboard.perimeterLabel,
+    points: clipboard.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+    color: nextMeasureOverlayColor(existingOverlayCount),
+    visible: true,
+  }
 }
 
 export function overlayKindFromMeasure(
