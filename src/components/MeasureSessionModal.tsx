@@ -42,9 +42,6 @@ import {
   overlaysForSheet,
   overlayKindFromMeasure,
   parseMeasureOverlays,
-  pasteOverlayFromClipboard,
-  snapshotOverlayForClipboard,
-  type MeasureClipboard,
   type MeasureSessionOverlay,
 } from '../lib/measureSessionOverlays'
 import {
@@ -288,9 +285,6 @@ export function MeasureSessionModal({
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     null,
   )
-  const [measureClipboard, setMeasureClipboard] =
-    useState<MeasureClipboard | null>(null)
-  const [pasteGeneration, setPasteGeneration] = useState(0)
   const [history, setHistory] = useState<MeasureHistoryState>(() =>
     emptyMeasureHistory(),
   )
@@ -367,8 +361,6 @@ export function MeasureSessionModal({
     setOverlays(parseMeasureOverlays(instance.geometry?.measureOverlays))
     setColorPickerId(null)
     setSelectedOverlayId(null)
-    setMeasureClipboard(null)
-    setPasteGeneration(0)
     setHistory(emptyMeasureHistory())
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: geometry/count sync only on open/row change
   }, [open, instance.id, fieldKey])
@@ -581,42 +573,6 @@ export function MeasureSessionModal({
     }
   }
 
-  function copySelectedMeasurement() {
-    const selected = overlays.find((o) => o.id === selectedOverlayId)
-    if (!selected) {
-      setStatusMsg('Select a measurement to copy')
-      return
-    }
-    setMeasureClipboard(snapshotOverlayForClipboard(selected))
-    setPasteGeneration(0)
-    setStatusMsg(`Copied “${selected.name}” (${selected.valueLabel})`)
-  }
-
-  function pasteMeasurement() {
-    if (!measureClipboard) {
-      setStatusMsg('Nothing to paste — copy a measurement first')
-      return
-    }
-    if (!sheet) {
-      setStatusMsg('No drawing page to paste onto')
-      return
-    }
-    const nextGen = pasteGeneration + 1
-    const pasted = pasteOverlayFromClipboard(
-      measureClipboard,
-      overlays.length,
-      nextGen,
-      newMeasureId('ov'),
-    )
-    pasted.sheetId = sheet.id
-    setPasteGeneration(nextGen)
-    persistOverlays([...overlays, pasted], 'Paste')
-    setSelectedOverlayId(pasted.id)
-    setStatusMsg(
-      `Pasted “${pasted.name}” · ${pasted.valueLabel} (independent copy)`,
-    )
-  }
-
   useEffect(() => {
     if (!open) return
     function onKeyDown(e: KeyboardEvent) {
@@ -647,11 +603,8 @@ export function MeasureSessionModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional fresh closures
   }, [
     open,
-    selectedOverlayId,
-    measureClipboard,
-    pasteGeneration,
-    overlays,
     history,
+    overlays,
     localGeo,
     localCount,
     areaParents,
@@ -1696,12 +1649,6 @@ export function MeasureSessionModal({
                     </div>
                   </div>
                 </div>
-                {measureClipboard ? (
-                  <p className="mb-2 truncate text-[10px] text-steel">
-                    Clipboard: {measureClipboard.sourceName} ·{' '}
-                    {measureClipboard.valueLabel}
-                  </p>
-                ) : null}
                 {pageOverlays.length === 0 ? (
                   <p className="text-steel">
                     Finished traces stay on this PDF page and return when you
