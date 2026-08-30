@@ -41,6 +41,81 @@ export type MeasureSessionOverlay = {
   /** Stroke/fill from LAYER_PALETTE_SWATCHES (or user override). */
   color: string
   visible: boolean
+  /**
+   * Blueprint sheet page this drawing belongs to.
+   * Used so traces reappear when revisiting that PDF page.
+   */
+  sheetId?: string
+}
+
+const OVERLAY_KINDS = new Set<string>([
+  'LINEAR',
+  'AREA',
+  'COUNT',
+  'CIRCLE',
+  'ANGLE',
+  'CURVED',
+  'DEDUCTION',
+])
+
+/** Parse persisted drawings from instance.geometry.measureOverlays. */
+export function parseMeasureOverlays(raw: unknown): MeasureSessionOverlay[] {
+  if (!Array.isArray(raw)) return []
+  const out: MeasureSessionOverlay[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const id = typeof r.id === 'string' ? r.id : null
+    const kind = typeof r.kind === 'string' ? r.kind : null
+    const name = typeof r.name === 'string' ? r.name : null
+    const valueLabel = typeof r.valueLabel === 'string' ? r.valueLabel : null
+    if (!id || !kind || !OVERLAY_KINDS.has(kind) || !name || valueLabel == null) {
+      continue
+    }
+    if (!Array.isArray(r.points)) continue
+    const points: ImagePoint[] = []
+    for (const p of r.points) {
+      if (!p || typeof p !== 'object') continue
+      const pt = p as Record<string, unknown>
+      const x = Number(pt.x)
+      const y = Number(pt.y)
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+      points.push({ x, y })
+    }
+    if (points.length === 0) continue
+    const periRaw = r.perimeterLabel
+    const perimeterLabel =
+      periRaw == null || periRaw === ''
+        ? null
+        : typeof periRaw === 'string'
+          ? periRaw
+          : null
+    const color =
+      typeof r.color === 'string' && r.color.trim()
+        ? r.color.trim()
+        : MEASURE_OVERLAY_COLOR
+    out.push({
+      id,
+      kind: kind as MeasureOverlayKind,
+      name,
+      valueLabel,
+      perimeterLabel,
+      points,
+      color,
+      visible: r.visible !== false,
+      sheetId: typeof r.sheetId === 'string' ? r.sheetId : undefined,
+    })
+  }
+  return out
+}
+
+/** Overlays drawn on a specific PDF page (or unscoped legacy rows). */
+export function overlaysForSheet(
+  overlays: readonly MeasureSessionOverlay[],
+  sheetId: string | null | undefined,
+): MeasureSessionOverlay[] {
+  if (!sheetId) return [...overlays]
+  return overlays.filter((o) => !o.sheetId || o.sheetId === sheetId)
 }
 
 /** Snapshot for copy/paste — value + geometry, not a live link to the source. */

@@ -24,9 +24,24 @@ import {
   type MeasureAreaParent,
 } from '../lib/measureAreaParents'
 import {
+  captureMeasureSnapshot,
+  cloneAreaParents,
+  cloneGeometry,
+  cloneMeasureOverlays,
+  emptyMeasureHistory,
+  pushMeasureHistory,
+  redoMeasureHistory,
+  snapshotsEqual,
+  undoMeasureHistory,
+  type MeasureHistorySnapshot,
+  type MeasureHistoryState,
+} from '../lib/measureHistory'
+import {
   defaultOverlayName,
   nextMeasureOverlayColor,
+  overlaysForSheet,
   overlayKindFromMeasure,
+  parseMeasureOverlays,
   pasteOverlayFromClipboard,
   snapshotOverlayForClipboard,
   type MeasureClipboard,
@@ -276,7 +291,9 @@ export function MeasureSessionModal({
   const [measureClipboard, setMeasureClipboard] =
     useState<MeasureClipboard | null>(null)
   const [pasteGeneration, setPasteGeneration] = useState(0)
-  const draftTraceColor = nextMeasureOverlayColor(overlays.length)
+  const [history, setHistory] = useState<MeasureHistoryState>(() =>
+    emptyMeasureHistory(),
+  )
   const [countDraftPoints, setCountDraftPoints] = useState<ImagePoint[]>([])
   const [localGeo, setLocalGeo] = useState<Record<string, unknown>>(
     () => ({ ...(instance.geometry || {}) }),
@@ -308,6 +325,9 @@ export function MeasureSessionModal({
   const sheets = sheetsQuery.data ?? []
   const sheet = sheets[pageIndex] ?? sheets[0] ?? null
   const calibrated = sheet ? isCalibrated(sheet) : false
+  const draftTraceColor = nextMeasureOverlayColor(
+    overlaysForSheet(overlays, sheet?.id).length,
+  )
 
   const defaultMode = focus ? defaultModeForFocus(focus, pairFill) : 'LINEAR'
   const activeMode: MeasureMode = modeOverride ?? defaultMode
@@ -344,11 +364,12 @@ export function MeasureSessionModal({
     )
     setAreaParents(loaded)
     setDeductionParentId(loaded[0]?.id ?? '')
-    setOverlays([])
+    setOverlays(parseMeasureOverlays(instance.geometry?.measureOverlays))
     setColorPickerId(null)
     setSelectedOverlayId(null)
     setMeasureClipboard(null)
     setPasteGeneration(0)
+    setHistory(emptyMeasureHistory())
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: geometry/count sync only on open/row change
   }, [open, instance.id, fieldKey])
 
@@ -383,43 +404,167 @@ export function MeasureSessionModal({
     },
   })
 
-  function applyPatch(patch: MeasureApplyPatch) {
-    if (patch.geometry) {
-      setLocalGeo((g) => ({ ...g, ...patch.geometry }))
-    }
-    if (patch.count != null) {
-      setLocalCount(patch.count)
-    }
-    onApply(patch)
+  function captureCurrent(): MeasureHistorySnapshot {
+    return captureMeasureSnapshot({
+      overlays,
+      geometry: localGeo,
+      count: localCount,
+      areaParents,
+      deductionParentId,
+    })
   }
 
-  /** Persist parents and write net area onto areaOverride (+ openingArea sum). */
-  function commitAreaParents(
-    next: MeasureAreaParent[],
-    extraGeometry?: Record<string, unknown>,
+  function restoreSnapshot(snap: MeasureHistorySnapshot) {
+    setOverlays(cloneMeasureOverlays(snap.overlays))
+    setLocalGeo(cloneGeometry(snap.geometry))
+    setLocalCount(snap.count)
+    setAreaParents(cloneAreaParents(snap.areaParents))
+    setDeductionParentId(snap.deductionParentId)
+    onApply({
+      geometry: cloneGeometry(snap.geometry),
+      count: snap.count,
+    })
+  }
+
+  /** Record one undoable change, then apply overlays + schedule fields together. */
+  function commitSnapshot(
+    label: string,
+    next: MeasureHistorySnapshot,
+    beforeOverride?: MeasureHistorySnapshot,
   ) {
-    setAreaParents(next)
-    if (next.length > 0) {
-      setDeductionParentId((id) => id || next[0].id)
+    const before = beforeOverride ?? captureCurrent()
+    const after = captureMeasureSnapshot(next)
+    if (snapshotsEqual(before, after)) return
+    setHistory((h) => pushMeasureHistory(h, { label, before, after }))
+    restoreSnapshot(after)
+  }
+
+  function undoMeasurement() {
+    const label = history.undo[history.undo.length - 1]?.label
+    const result = undoMeasureHistory(history, captureCurrent())
+    if (!result) {
+      setStatusMsg('Nothing to undo')
+      return
     }
-    const primary = next[0]
-    const geometry: Record<string, unknown> = {
+    setHistory(result.state)
+    restoreSnapshot(result.restore)
+    setStatusMsg(label ? `Undo: ${label}` : 'Undo')
+  }
+
+  function redoMeasurement() {
+    const label = history.redo[history.redo.length - 1]?.label
+    const result = redoMeasureHistory(history, captureCurrent())
+    if (!result) {
+      setStatusMsg('Nothing to redo')
+      return
+    }
+    setHistory(result.state)
+    restoreSnapshot(result.restore)
+    setStatusMsg(label ? `Redo: ${label}` : 'Redo')
+  }
+
+  function appendOverlay(
+    list: MeasureSessionOverlay[],
+    args: {
+      kind: MeasureSessionOverlay['kind']
+      points: ImagePoint[]
+      valueLabel: string
+      perimeterLabel?: string | null
+      name?: string
+    },
+  ): MeasureSessionOverlay[] {
+    if (!sheet) return list
+    const kindCount = list.filter((o) => o.kind === args.kind).length + 1
+    return [
+      ...list,
+      {
+        id: newMeasureId('ov'),
+        kind: args.kind,
+        name: args.name ?? defaultOverlayName(args.kind, kindCount),
+        valueLabel: args.valueLabel,
+        perimeterLabel: args.perimeterLabel ?? null,
+        points: args.points.map((p) => ({ ...p })),
+        color: nextMeasureOverlayColor(list.length),
+        visible: true,
+        sheetId: sheet.id,
+      },
+    ]
+  }
+
+  function withAreaParents(
+    geometry: Record<string, unknown>,
+    nextParents: MeasureAreaParent[],
+    extraGeometry?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const primary = nextParents[0]
+    const next: Record<string, unknown> = {
+      ...geometry,
       ...(extraGeometry || {}),
-      measureAreaParents: next,
+      measureAreaParents: nextParents,
     }
     if (primary) {
-      geometry.areaOverride = parentNetM2(primary)
-      geometry.openingArea = totalDeductionsM2(primary)
+      next.areaOverride = parentNetM2(primary)
+      next.openingArea = totalDeductionsM2(primary)
     }
-    applyPatch({ geometry })
+    return next
   }
 
-  function registerAreaParent(
+  /** Keep drawings on the PDF after reopen — stored on instance.geometry. */
+  function persistOverlays(
+    next: MeasureSessionOverlay[],
+    label = 'Edit drawing',
+  ) {
+    commitSnapshot(label, {
+      overlays: next,
+      geometry: { ...localGeo, measureOverlays: next },
+      count: localCount,
+      areaParents,
+      deductionParentId,
+    })
+  }
+
+  function commitOverlayAndPatch(
+    label: string,
+    overlayArgs: {
+      kind: MeasureSessionOverlay['kind']
+      points: ImagePoint[]
+      valueLabel: string
+      perimeterLabel?: string | null
+      name?: string
+    },
+    patch?: MeasureApplyPatch,
+    nextParents?: MeasureAreaParent[],
+    nextDeductionParentId?: string,
+  ) {
+    const nextOverlays = appendOverlay(overlays, overlayArgs)
+    let geometry: Record<string, unknown> = {
+      ...localGeo,
+      ...(patch?.geometry || {}),
+      measureOverlays: nextOverlays,
+    }
+    const parents = nextParents ?? areaParents
+    if (nextParents) {
+      geometry = withAreaParents(geometry, nextParents, patch?.geometry)
+    }
+    commitSnapshot(label, {
+      overlays: nextOverlays,
+      geometry,
+      count: patch?.count ?? localCount,
+      areaParents: parents,
+      deductionParentId: nextDeductionParentId ?? deductionParentId,
+    })
+  }
+
+  function registerAreaParentState(
     grossM2: number,
     kindLabel: string,
     extraGeometry?: Record<string, unknown>,
     perimeterM?: number | null,
-  ) {
+  ): {
+    parents: MeasureAreaParent[]
+    deductionParentId: string
+    geometryPatch: Record<string, unknown>
+  } {
     const n = areaParents.length + 1
     const parent: MeasureAreaParent = {
       id: newMeasureId('area'),
@@ -428,35 +573,12 @@ export function MeasureSessionModal({
       perimeterM: perimeterM ?? null,
       deductions: [],
     }
-    const next = [...areaParents, parent]
-    setDeductionParentId(parent.id)
-    commitAreaParents(next, extraGeometry)
-    return parent
-  }
-
-  function pushOverlay(args: {
-    kind: MeasureSessionOverlay['kind']
-    points: ImagePoint[]
-    valueLabel: string
-    perimeterLabel?: string | null
-    name?: string
-  }) {
-    setOverlays((prev) => {
-      const kindCount = prev.filter((o) => o.kind === args.kind).length + 1
-      return [
-        ...prev,
-        {
-          id: newMeasureId('ov'),
-          kind: args.kind,
-          name: args.name ?? defaultOverlayName(args.kind, kindCount),
-          valueLabel: args.valueLabel,
-          perimeterLabel: args.perimeterLabel ?? null,
-          points: args.points.map((p) => ({ ...p })),
-          color: nextMeasureOverlayColor(prev.length),
-          visible: true,
-        },
-      ]
-    })
+    const parents = [...areaParents, parent]
+    return {
+      parents,
+      deductionParentId: parent.id,
+      geometryPatch: withAreaParents(localGeo, parents, extraGeometry),
+    }
   }
 
   function copySelectedMeasurement() {
@@ -475,6 +597,10 @@ export function MeasureSessionModal({
       setStatusMsg('Nothing to paste — copy a measurement first')
       return
     }
+    if (!sheet) {
+      setStatusMsg('No drawing page to paste onto')
+      return
+    }
     const nextGen = pasteGeneration + 1
     const pasted = pasteOverlayFromClipboard(
       measureClipboard,
@@ -482,8 +608,9 @@ export function MeasureSessionModal({
       nextGen,
       newMeasureId('ov'),
     )
+    pasted.sheetId = sheet.id
     setPasteGeneration(nextGen)
-    setOverlays((prev) => [...prev, pasted])
+    persistOverlays([...overlays, pasted], 'Paste')
     setSelectedOverlayId(pasted.id)
     setStatusMsg(
       `Pasted “${pasted.name}” · ${pasted.valueLabel} (independent copy)`,
@@ -505,17 +632,18 @@ export function MeasureSessionModal({
       }
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
-      if (e.key === 'c' || e.key === 'C') {
+      if (e.key === 'z' || e.key === 'Z') {
         e.preventDefault()
-        copySelectedMeasurement()
-      } else if (e.key === 'v' || e.key === 'V') {
+        if (e.shiftKey) redoMeasurement()
+        else undoMeasurement()
+      } else if (e.key === 'y' || e.key === 'Y') {
         e.preventDefault()
-        pasteMeasurement()
+        redoMeasurement()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-    // Rebind when copy/paste inputs change so shortcuts see latest state.
+    // Rebind when shortcut inputs change so handlers see latest state.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional fresh closures
   }, [
     open,
@@ -523,12 +651,22 @@ export function MeasureSessionModal({
     measureClipboard,
     pasteGeneration,
     overlays,
+    history,
+    localGeo,
+    localCount,
+    areaParents,
+    deductionParentId,
   ])
 
+  const pageOverlays = useMemo(
+    () => overlaysForSheet(overlays, sheet?.id),
+    [overlays, sheet?.id],
+  )
+
   const displayOverlays: MeasureSessionOverlay[] = useMemo(() => {
-    if (countDraftPoints.length === 0) return overlays
+    if (countDraftPoints.length === 0) return pageOverlays
     return [
-      ...overlays,
+      ...pageOverlays,
       {
         id: '__count-draft',
         kind: 'COUNT' as const,
@@ -537,9 +675,10 @@ export function MeasureSessionModal({
         points: countDraftPoints,
         color: draftTraceColor,
         visible: true,
+        sheetId: sheet?.id,
       },
     ]
-  }, [overlays, countDraftPoints, draftTraceColor])
+  }, [pageOverlays, countDraftPoints, draftTraceColor, sheet?.id])
 
   function handleDraftMeasureChange(
     draft: {
@@ -754,20 +893,24 @@ export function MeasureSessionModal({
         label: `Deduction ${parent.deductions.length + 1}`,
         areaM2: area,
       }
-      const next = addDeductionToParent(areaParents, parentId, deduction)
-      commitAreaParents(next)
-      const updated = next.find((p) => p.id === parentId)!
+      const nextParents = addDeductionToParent(areaParents, parentId, deduction)
+      const updated = nextParents.find((p) => p.id === parentId)!
       const net = parentNetM2(updated)
-      pushOverlay({
-        kind: 'DEDUCTION',
-        points: payload.points,
-        valueLabel: `${area.toFixed(2)} m²`,
-        name: deduction.label,
-      })
+      commitOverlayAndPatch(
+        'Add deduction',
+        {
+          kind: 'DEDUCTION',
+          points: payload.points,
+          valueLabel: `${area.toFixed(2)} m²`,
+          name: deduction.label,
+        },
+        undefined,
+        nextParents,
+        parentId,
+      )
       setStatusMsg(
         `${updated.label}: ${updated.grossM2.toFixed(2)} − ${totalDeductionsM2(updated).toFixed(2)} = ${net.toFixed(2)} m² (Override)`,
       )
-      setPhase('pan')
       return
     }
 
@@ -777,21 +920,23 @@ export function MeasureSessionModal({
         setStatusMsg('Could not sample curved path — try again')
         return
       }
-      pushOverlay({
-        kind: 'CURVED',
-        points: payload.points,
-        valueLabel: `${len.toFixed(2)} m`,
-      })
       const patch = scalarPatchForFocus(focus, len)
-      if (patch) {
-        applyPatch(patch)
-        setStatusMsg(
-          `${focus.clickedLabel || target.label}≈${len.toFixed(2)} m (curved, sampled)`,
-        )
-      } else {
+      if (!patch) {
         setStatusMsg('Curved path cannot apply to this field')
+        return
       }
-      setPhase('pan')
+      commitOverlayAndPatch(
+        'Add curved path',
+        {
+          kind: 'CURVED',
+          points: payload.points,
+          valueLabel: `${len.toFixed(2)} m`,
+        },
+        patch,
+      )
+      setStatusMsg(
+        `${focus.clickedLabel || target.label}≈${len.toFixed(2)} m (curved, sampled)`,
+      )
       return
     }
 
@@ -804,22 +949,27 @@ export function MeasureSessionModal({
       }
       const circ = Math.round(2 * Math.PI * r * 1000) / 1000
       const periLabel = `${circ.toFixed(2)} m`
-      pushOverlay({
-        kind: 'CIRCLE',
-        points: payload.points,
-        valueLabel: `${area.toFixed(2)} m²`,
-        perimeterLabel: periLabel,
-      })
       const patch = scalarPatchForFocus(focus, r)
-      if (patch?.geometry) {
-        registerAreaParent(area, 'Circle', patch.geometry, circ)
-        setStatusMsg(
-          `${focus.clickedLabel || target.label}=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`,
-        )
-      } else {
+      if (!patch?.geometry) {
         setStatusMsg('Circle radius cannot apply to this field')
+        return
       }
-      setPhase('pan')
+      const built = registerAreaParentState(area, 'Circle', patch.geometry, circ)
+      commitOverlayAndPatch(
+        'Add circle',
+        {
+          kind: 'CIRCLE',
+          points: payload.points,
+          valueLabel: `${area.toFixed(2)} m²`,
+          perimeterLabel: periLabel,
+        },
+        { geometry: built.geometryPatch },
+        built.parents,
+        built.deductionParentId,
+      )
+      setStatusMsg(
+        `${focus.clickedLabel || target.label}=${r.toFixed(2)} m · Area ${area.toFixed(2)} m²`,
+      )
       return
     }
 
@@ -829,21 +979,23 @@ export function MeasureSessionModal({
         setStatusMsg('Could not solve arc — try again')
         return
       }
-      pushOverlay({
-        kind: 'CURVED',
-        points: payload.points,
-        valueLabel: `${len.toFixed(2)} m`,
-      })
       const patch = scalarPatchForFocus(focus, len)
-      if (patch) {
-        applyPatch(patch)
-        setStatusMsg(
-          `${focus.clickedLabel || target.label}=${len.toFixed(2)} m`,
-        )
-      } else {
+      if (!patch) {
         setStatusMsg('Arc length cannot apply to this field')
+        return
       }
-      setPhase('pan')
+      commitOverlayAndPatch(
+        'Add arc',
+        {
+          kind: 'CURVED',
+          points: payload.points,
+          valueLabel: `${len.toFixed(2)} m`,
+        },
+        patch,
+      )
+      setStatusMsg(
+        `${focus.clickedLabel || target.label}=${len.toFixed(2)} m`,
+      )
       return
     }
 
@@ -859,21 +1011,23 @@ export function MeasureSessionModal({
         return
       }
       const rounded = Math.round(deg * 1000) / 1000
-      pushOverlay({
-        kind: 'ANGLE',
-        points: payload.points,
-        valueLabel: `${rounded.toFixed(1)}°`,
-      })
       const patch = scalarPatchForFocus(focus, rounded)
-      if (patch) {
-        applyPatch(patch)
-        setStatusMsg(
-          `${focus.clickedLabel || target.label}=${rounded.toFixed(1)}°`,
-        )
-      } else {
+      if (!patch) {
         setStatusMsg('Angle cannot apply to this field')
+        return
       }
-      setPhase('pan')
+      commitOverlayAndPatch(
+        'Add angle',
+        {
+          kind: 'ANGLE',
+          points: payload.points,
+          valueLabel: `${rounded.toFixed(1)}°`,
+        },
+        patch,
+      )
+      setStatusMsg(
+        `${focus.clickedLabel || target.label}=${rounded.toFixed(1)}°`,
+      )
       return
     }
 
@@ -896,22 +1050,27 @@ export function MeasureSessionModal({
         setStatusMsg('Area cannot apply to this field')
         return
       }
-      registerAreaParent(
+      const built = registerAreaParentState(
         gross,
         'Area',
         patch.geometry,
         peri,
       )
-      pushOverlay({
-        kind: overlayKindFromMeasure(payload.type, activeMode),
-        points: payload.points,
-        valueLabel: `${gross.toFixed(2)} m²`,
-        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
-      })
+      commitOverlayAndPatch(
+        'Add area',
+        {
+          kind: overlayKindFromMeasure(payload.type, activeMode),
+          points: payload.points,
+          valueLabel: `${gross.toFixed(2)} m²`,
+          perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
+        },
+        { geometry: built.geometryPatch },
+        built.parents,
+        built.deductionParentId,
+      )
       setStatusMsg(
         `${target.labels[0]}=${sides.a} m · ${target.labels[1]}=${sides.b} m${areaStatusSuffix(payload.points, scale, unit)}`,
       )
-      setPhase('pan')
       return
     }
 
@@ -937,17 +1096,27 @@ export function MeasureSessionModal({
         setStatusMsg('Area cannot apply to this field')
         return
       }
-      registerAreaParent(gross, 'Area', patch.geometry, peri)
-      pushOverlay({
-        kind: 'AREA',
-        points: payload.points,
-        valueLabel: `${gross.toFixed(2)} m²`,
-        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
-      })
+      const built = registerAreaParentState(
+        gross,
+        'Area',
+        patch.geometry,
+        peri,
+      )
+      commitOverlayAndPatch(
+        'Add area',
+        {
+          kind: 'AREA',
+          points: payload.points,
+          valueLabel: `${gross.toFixed(2)} m²`,
+          perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
+        },
+        { geometry: built.geometryPatch },
+        built.parents,
+        built.deductionParentId,
+      )
       setStatusMsg(
         `${focus.clickedLabel || clickedKey}=${value} m${areaStatusSuffix(payload.points, scale, unit)}`,
       )
-      setPhase('pan')
       return
     }
 
@@ -963,19 +1132,21 @@ export function MeasureSessionModal({
         setStatusMsg('Could not read length — try again')
         return
       }
-      pushOverlay({
-        kind: 'LINEAR',
-        points: payload.points,
-        valueLabel: `${len} m`,
-      })
       const patch = scalarPatchForFocus(focus, len)
       if (!patch) {
         setStatusMsg('Length cannot apply to this field')
         return
       }
-      applyPatch(patch)
+      commitOverlayAndPatch(
+        'Add linear',
+        {
+          kind: 'LINEAR',
+          points: payload.points,
+          valueLabel: `${len} m`,
+        },
+        patch,
+      )
       setStatusMsg(`${focus.clickedLabel || clickedKey}=${len} m`)
-      setPhase('pan')
       return
     }
 
@@ -988,19 +1159,21 @@ export function MeasureSessionModal({
         setStatusMsg('Could not read length — try again')
         return
       }
-      pushOverlay({
-        kind: 'LINEAR',
-        points: payload.points,
-        valueLabel: `${len} m`,
-      })
       const patch = scalarPatchForFocus(focus, len)
       if (!patch) {
         setStatusMsg('Length cannot apply to this field')
         return
       }
-      applyPatch(patch)
+      commitOverlayAndPatch(
+        activeMode === 'POLYLINE' ? 'Add polyline' : 'Add linear',
+        {
+          kind: 'LINEAR',
+          points: payload.points,
+          valueLabel: `${len} m`,
+        },
+        patch,
+      )
       setStatusMsg(`${target.label}=${len} m`)
-      setPhase('pan')
       return
     }
 
@@ -1023,44 +1196,68 @@ export function MeasureSessionModal({
         setStatusMsg('Area cannot apply to this field')
         return
       }
-      registerAreaParent(gross, 'Area', patch.geometry, peri)
-      pushOverlay({
-        kind: 'AREA',
-        points: payload.points,
-        valueLabel: `${gross.toFixed(2)} m²`,
-        perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
-      })
+      const built = registerAreaParentState(
+        gross,
+        'Area',
+        patch.geometry,
+        peri,
+      )
+      commitOverlayAndPatch(
+        'Add area',
+        {
+          kind: 'AREA',
+          points: payload.points,
+          valueLabel: `${gross.toFixed(2)} m²`,
+          perimeterLabel: peri != null ? `${peri.toFixed(2)} m` : null,
+        },
+        { geometry: built.geometryPatch },
+        built.parents,
+        built.deductionParentId,
+      )
       setStatusMsg(
         `${target.label}=${value} m${areaStatusSuffix(payload.points, scale, unit)}`,
       )
-      setPhase('pan')
     }
   }
 
   function applyCount() {
     if (!focus) return
     const n = Math.max(1, countDraft)
-    if (countDraftPoints.length > 0) {
-      pushOverlay({
-        kind: 'COUNT',
-        points: countDraftPoints,
-        valueLabel: String(n),
-      })
-    }
     const patch = countPatchForTarget(focus.target, n)
-    if (patch) {
-      applyPatch(patch)
+    if (!patch) {
+      setStatusMsg('Count cannot apply to this field')
+      return
+    }
+    if (countDraftPoints.length > 0) {
+      commitOverlayAndPatch(
+        'Apply count',
+        {
+          kind: 'COUNT',
+          points: countDraftPoints,
+          valueLabel: String(n),
+        },
+        patch,
+      )
+    } else {
+      commitSnapshot('Apply count', {
+        overlays,
+        geometry: {
+          ...localGeo,
+          ...(patch.geometry || {}),
+          measureOverlays: overlays,
+        },
+        count: patch.count ?? localCount,
+        areaParents,
+        deductionParentId,
+      })
     }
     if (focus.target.kind === 'count') {
       setStatusMsg(`No. = ${n}`)
     } else if (focus.target.kind === 'geometry') {
       setStatusMsg(`${focus.target.label} = ${n}`)
-    } else {
-      setStatusMsg('Count cannot apply to this field')
     }
     setCountDraft(0)
     setCountDraftPoints([])
-    setPhase('pan')
   }
 
   function handleSaveCalibration(event: FormEvent) {
@@ -1472,29 +1669,31 @@ export function MeasureSessionModal({
               />
               </div>
               <aside className="flex w-56 flex-shrink-0 flex-col overflow-y-auto border-l border-steel-border bg-[#1a1f26] px-2.5 py-3 text-[11px]">
-                <div className="mb-2 flex items-start justify-between gap-1">
-                  <div className="text-sm font-semibold text-white">
-                    Measurements
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
-                      disabled={!selectedOverlayId}
-                      title="Copy selected (Ctrl+C)"
-                      onClick={copySelectedMeasurement}
-                    >
-                      Copy
-                    </button>
-                    <button
-                      type="button"
-                      className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
-                      disabled={!measureClipboard}
-                      title="Paste offset duplicate (Ctrl+V)"
-                      onClick={pasteMeasurement}
-                    >
-                      Paste
-                    </button>
+                <div className="mb-2 flex flex-col gap-1.5">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="text-sm font-semibold text-white">
+                      Measurements
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                      <button
+                        type="button"
+                        className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
+                        disabled={history.undo.length === 0}
+                        title="Undo (Ctrl+Z)"
+                        onClick={undoMeasurement}
+                      >
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        className="border border-steel-border/80 px-1.5 py-0.5 text-[10px] text-steel hover:border-white/50 hover:text-white disabled:opacity-40"
+                        disabled={history.redo.length === 0}
+                        title="Redo (Ctrl+Y)"
+                        onClick={redoMeasurement}
+                      >
+                        Redo
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {measureClipboard ? (
@@ -1503,14 +1702,15 @@ export function MeasureSessionModal({
                     {measureClipboard.valueLabel}
                   </p>
                 ) : null}
-                {overlays.length === 0 ? (
+                {pageOverlays.length === 0 ? (
                   <p className="text-steel">
-                    Finished traces stay on the sheet and list here. Select one
-                    to Copy, then Paste for an independent offset copy.
+                    Finished traces stay on this PDF page and return when you
+                    reopen Measure. Use Undo/Redo (Ctrl+Z / Ctrl+Y) for drawing
+                    and field changes in this session.
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {overlays.map((o) => (
+                    {pageOverlays.map((o) => (
                       <li
                         key={o.id}
                         role="button"
@@ -1558,6 +1758,44 @@ export function MeasureSessionModal({
                                   prev.map((x) =>
                                     x.id === o.id ? { ...x, name } : x,
                                   ),
+                                )
+                              }}
+                              onBlur={(e) => {
+                                const name = e.currentTarget.value
+                                const committed = parseMeasureOverlays(
+                                  localGeo.measureOverlays,
+                                )
+                                const prevName = committed.find(
+                                  (x) => x.id === o.id,
+                                )?.name
+                                if (prevName === name) return
+                                const beforeOverlays = overlays.map((x) =>
+                                  x.id === o.id
+                                    ? { ...x, name: prevName ?? x.name }
+                                    : x,
+                                )
+                                const nextOverlays = overlays.map((x) =>
+                                  x.id === o.id ? { ...x, name } : x,
+                                )
+                                commitSnapshot(
+                                  'Rename',
+                                  {
+                                    overlays: nextOverlays,
+                                    geometry: {
+                                      ...localGeo,
+                                      measureOverlays: nextOverlays,
+                                    },
+                                    count: localCount,
+                                    areaParents,
+                                    deductionParentId,
+                                  },
+                                  captureMeasureSnapshot({
+                                    overlays: beforeOverlays,
+                                    geometry: localGeo,
+                                    count: localCount,
+                                    areaParents,
+                                    deductionParentId,
+                                  }),
                                 )
                               }}
                               onClick={(e) => e.stopPropagation()}
@@ -1608,12 +1846,13 @@ export function MeasureSessionModal({
                             title={o.visible ? 'Hide on sheet' : 'Show on sheet'}
                             onClick={(e) => {
                               e.stopPropagation()
-                              setOverlays((prev) =>
-                                prev.map((x) =>
+                              persistOverlays(
+                                overlays.map((x) =>
                                   x.id === o.id
                                     ? { ...x, visible: !x.visible }
                                     : x,
                                 ),
+                                o.visible ? 'Hide' : 'Show',
                               )
                             }}
                             aria-label={o.visible ? 'Hide' : 'Show'}
@@ -1640,8 +1879,9 @@ export function MeasureSessionModal({
                             title="Delete measurement"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setOverlays((prev) =>
-                                prev.filter((x) => x.id !== o.id),
+                              persistOverlays(
+                                overlays.filter((x) => x.id !== o.id),
+                                'Delete',
                               )
                               setSelectedOverlayId((id) =>
                                 id === o.id ? null : id,
@@ -1661,10 +1901,11 @@ export function MeasureSessionModal({
                           <MeasureColorSwatchPicker
                             value={o.color}
                             onChange={(color) => {
-                              setOverlays((prev) =>
-                                prev.map((x) =>
+                              persistOverlays(
+                                overlays.map((x) =>
                                   x.id === o.id ? { ...x, color } : x,
                                 ),
+                                'Recolor',
                               )
                             }}
                             onClose={() => setColorPickerId(null)}

@@ -806,44 +806,40 @@ export function ScheduleTab({
           fieldKey={measureSession.fieldKey}
           onClose={() => setMeasureSession(null)}
           onApply={(patch: MeasureApplyPatch) => {
-            const body: Record<string, unknown> = {}
-            if (patch.geometry) {
-              let geometry = {
-                ...(measureSession.instance.geometry || {}),
-                ...patch.geometry,
+            setMeasureSession((prev) => {
+              if (!prev) return prev
+              const body: Record<string, unknown> = {}
+              let geometry = { ...(prev.instance.geometry || {}) }
+              if (patch.geometry) {
+                geometry = { ...geometry, ...patch.geometry }
+                for (const key of Object.keys(patch.geometry)) {
+                  geometry = withFieldFormula(geometry, key, null)
+                }
+                body.geometry = geometry
               }
-              for (const key of Object.keys(patch.geometry)) {
-                geometry = withFieldFormula(geometry, key, null)
+              if (patch.count != null) {
+                body.count = patch.count
+                body.geometry = withFieldFormula(
+                  {
+                    ...((body.geometry as Record<string, unknown>) || geometry),
+                  },
+                  'count',
+                  null,
+                )
+                geometry = body.geometry as Record<string, unknown>
               }
-              body.geometry = geometry
-            }
-            if (patch.count != null) {
-              body.count = patch.count
-              body.geometry = withFieldFormula(
-                {
-                  ...((body.geometry as Record<string, unknown>) ||
-                    measureSession.instance.geometry ||
-                    {}),
+              schedulePatch(prev.instance.id, body)
+              return {
+                ...prev,
+                instance: {
+                  ...prev.instance,
+                  count: patch.count ?? prev.instance.count,
+                  geometry: body.geometry
+                    ? (body.geometry as Record<string, unknown>)
+                    : prev.instance.geometry,
                 },
-                'count',
-                null,
-              )
-            }
-            schedulePatch(measureSession.instance.id, body)
-            setMeasureSession((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    instance: {
-                      ...prev.instance,
-                      count: patch.count ?? prev.instance.count,
-                      geometry: (body.geometry as Record<string, unknown>)
-                        ? (body.geometry as Record<string, unknown>)
-                        : prev.instance.geometry,
-                    },
-                  }
-                : prev,
-            )
+              }
+            })
           }}
         />
       ) : null}
