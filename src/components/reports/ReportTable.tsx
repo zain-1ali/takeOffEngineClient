@@ -11,6 +11,13 @@ function fmtQty(qty: number | undefined, line: ReportLine): string {
   return qty.toFixed(dec === 0 ? 0 : dec)
 }
 
+function basisLabel(basis: ReportLine['quantityBasis']): string | null {
+  if (!basis) return null
+  if (basis === 'independent') return 'Ind.'
+  if (basis === 'derived') return 'Der.'
+  return 'Cond.'
+}
+
 export function ReportTable({
   lines,
   currency,
@@ -24,13 +31,24 @@ export function ReportTable({
     return <p className="text-sm text-steel py-6">{emptyMessage}</p>
   }
 
+  const showCatalogueCols = lines.some(
+    (l) => l.kind === 'item' && (l.nrm2Ref || l.quantityBasis),
+  )
+  const colCount = showCatalogueCols ? 8 : 6
+
   return (
     <div className="panel-card !p-0 overflow-hidden">
       <DataTable>
         <DataTable.Header>
           <DataTable.Row>
-            <DataTable.HeaderCell className="w-14">Item</DataTable.HeaderCell>
+            <DataTable.HeaderCell className="w-14">Ref</DataTable.HeaderCell>
             <DataTable.HeaderCell>Description</DataTable.HeaderCell>
+            {showCatalogueCols && (
+              <>
+                <DataTable.HeaderCell className="w-20">NRM2</DataTable.HeaderCell>
+                <DataTable.HeaderCell className="w-14">Basis</DataTable.HeaderCell>
+              </>
+            )}
             <DataTable.HeaderCell align="right" className="w-20">
               Qty
             </DataTable.HeaderCell>
@@ -49,7 +67,7 @@ export function ReportTable({
               return (
                 <DataTable.Row key={i} className="!border-0 hover:!bg-transparent">
                   <DataTable.Cell
-                    colSpan={6}
+                    colSpan={colCount}
                     className="!py-2 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[11px]"
                   >
                     {line.source === 'MANUAL' && (
@@ -65,7 +83,7 @@ export function ReportTable({
             if (line.kind === 'total') {
               return (
                 <DataTable.Row key={i} totals>
-                  <DataTable.Cell colSpan={5}>{line.description}</DataTable.Cell>
+                  <DataTable.Cell colSpan={colCount - 1}>{line.description}</DataTable.Cell>
                   <DataTable.Cell numeric className="text-ink font-bold">
                     {formatMoney(line.amount, currency)}
                   </DataTable.Cell>
@@ -85,6 +103,16 @@ export function ReportTable({
                     {line.description}
                   </span>
                 </DataTable.Cell>
+                {showCatalogueCols && (
+                  <>
+                    <DataTable.Cell className="font-mono text-[11px] text-steel">
+                      {line.nrm2Ref || '—'}
+                    </DataTable.Cell>
+                    <DataTable.Cell className="text-[11px] text-steel" title={line.quantityBasis}>
+                      {basisLabel(line.quantityBasis) || '—'}
+                    </DataTable.Cell>
+                  </>
+                )}
                 <DataTable.Cell
                   numeric
                   className={line.isRebar ? 'text-chalk' : undefined}

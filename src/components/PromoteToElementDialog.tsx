@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchBlueprintPromotionOptions } from '../api/blueprintPromotions'
 import type { PromotionMeasurementType } from '../api/blueprintPromotions'
+import { listInstances } from '../api/projectsApi'
+import { findRegisterEntry } from '../constants/elementRegister'
+import {
+  emptyCompatibleFloorsMessage,
+  filterFloorsForElement,
+} from '../lib/levelCompatibility'
 import type { Floor } from '../types/api'
 
 interface PromoteToElementDialogProps {
@@ -29,7 +35,7 @@ export default function PromoteToElementDialog({
   onCancel,
   onConfirm,
 }: PromoteToElementDialogProps) {
-  const [floorId, setFloorId] = useState(floors[0]?.floorId ?? '')
+  const [floorId, setFloorId] = useState('')
   const [elementKey, setElementKey] = useState('')
   const optionsQuery = useQuery({
     queryKey: ['blueprint-promotion-options', projectId, measurementType],
@@ -37,10 +43,29 @@ export default function PromoteToElementDialog({
       fetchBlueprintPromotionOptions(projectId, measurementType),
   })
   const options = optionsQuery.data?.options ?? []
+  const registerEntry = useMemo(
+    () => findRegisterEntry(elementKey),
+    [elementKey],
+  )
 
-  useEffect(() => {
-    if (!floorId && floors[0]) setFloorId(floors[0].floorId)
-  }, [floorId, floors])
+  const elementFloorsQuery = useQuery({
+    queryKey: ['element-floor-ids', projectId, elementKey],
+    queryFn: async () => {
+      const { instances } = await listInstances(projectId, { elementKey })
+      return new Set(instances.map((i) => i.floorId))
+    },
+    enabled: !!projectId && !!elementKey,
+  })
+
+  const floorOptions = useMemo(
+    () =>
+      filterFloorsForElement({
+        floors,
+        allowedLevelTypes: registerEntry?.allowedLevelTypes,
+        floorIdsWithElementInstances: elementFloorsQuery.data ?? new Set(),
+      }),
+    [floors, registerEntry?.allowedLevelTypes, elementFloorsQuery.data],
+  )
 
   useEffect(() => {
     if (!options.some((option) => option.elementKey === elementKey)) {
@@ -48,30 +73,32 @@ export default function PromoteToElementDialog({
     }
   }, [elementKey, options])
 
+  useEffect(() => {
+    if (floorOptions.length === 0) {
+      setFloorId('')
+      return
+    }
+    if (!floorOptions.some((f) => f.floorId === floorId)) {
+      setFloorId(floorOptions[0].floorId)
+    }
+  }, [floorOptions, floorId])
+
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="promote-dialog-title"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel()
-      }}
-    >
-      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-        <h2 id="promote-dialog-title" className="text-lg font-semibold text-white">
-          Promote to Element
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md border border-steel-border bg-panel p-4 shadow-lg">
+        <h2 className="font-display text-lg font-semibold text-ink">
+          Promote measurement
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
-          {sourceLabel || 'Blueprint measurement'} · {value.toFixed(2)} {unit}
+        <p className="mt-1 text-xs text-steel">
+          {sourceLabel}: {value} {unit}
         </p>
 
-        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Element type
+        <label className="mt-4 block text-xs text-steel">
+          Element
           <select
-            className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            className="mt-1 w-full border border-steel-border bg-bg px-2 py-1.5 text-sm text-ink"
             value={elementKey}
-            disabled={busy || optionsQuery.isLoading}
+            disabled={busy || options.length === 0}
             onChange={(event) => setElementKey(event.target.value)}
           >
             {options.map((option) => (
@@ -82,33 +109,42 @@ export default function PromoteToElementDialog({
           </select>
         </label>
 
-        <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <label className="mt-3 block text-xs text-steel">
           Floor
-          <select
-            className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-            value={floorId}
-            disabled={busy}
-            onChange={(event) => setFloorId(event.target.value)}
-          >
-            {floors.map((floor) => (
-              <option key={floor.id} value={floor.floorId}>
-                {floor.label} ({floor.floorId})
-              </option>
-            ))}
-          </select>
+          {floorOptions.length === 0 ? (
+            <p className="mt-1 text-amber-200/90">
+              {emptyCompatibleFloorsMessage({
+                elementLabel:
+                  options.find((o) => o.elementKey === elementKey)?.label ||
+                  elementKey ||
+                  'this element',
+                allowedLevelTypes: registerEntry?.allowedLevelTypes,
+              })}
+            </p>
+          ) : (
+            <select
+              className="mt-1 w-full border border-steel-border bg-bg px-2 py-1.5 text-sm text-ink font-mono"
+              value={floorId}
+              disabled={busy}
+              onChange={(event) => setFloorId(event.target.value)}
+            >
+              {floorOptions.map((floor) => (
+                <option key={floor.id} value={floor.floorId}>
+                  {floor.exception ? '⚠ ' : ''}
+                  {floor.label} ({floor.floorId})
+                  {floor.exception ? ' — flagged' : ''}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
-        {optionsQuery.isError && (
-          <p className="mt-3 text-sm text-red-400">
-            Could not load compatible element types.
-          </p>
-        )}
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
 
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
-            className="rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            className="border border-steel-border px-3 py-1.5 text-xs text-steel"
             disabled={busy}
             onClick={onCancel}
           >
@@ -116,11 +152,26 @@ export default function PromoteToElementDialog({
           </button>
           <button
             type="button"
-            className="rounded-md bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="border border-signal bg-signal/20 px-3 py-1.5 text-xs text-ink disabled:opacity-40"
             disabled={busy || !floorId || !elementKey || options.length === 0}
-            onClick={() => onConfirm({ floorId, elementKey })}
+            onClick={() => {
+              const target = floorOptions.find((f) => f.floorId === floorId)
+              if (target && !target.compatible) {
+                const label =
+                  options.find((o) => o.elementKey === elementKey)?.label ||
+                  elementKey
+                if (
+                  !confirm(
+                    `This floor doesn't typically support ${label} — continue anyway?`,
+                  )
+                ) {
+                  return
+                }
+              }
+              onConfirm({ floorId, elementKey })
+            }}
           >
-            {busy ? 'Promoting…' : 'Create Element'}
+            {busy ? 'Promoting…' : 'Promote'}
           </button>
         </div>
       </div>

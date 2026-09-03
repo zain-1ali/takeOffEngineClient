@@ -11,6 +11,9 @@ export type ReportLine = {
   isRebar?: boolean
   dec?: number
   source?: ReportSource
+  nrm2Ref?: string
+  quantityBasis?: 'independent' | 'derived' | 'conditional'
+  workCategory?: string
 }
 
 export type LabourActivity = {

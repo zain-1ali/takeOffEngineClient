@@ -1,3 +1,5 @@
+import type { FloorLevelType } from '../lib/levelCompatibility'
+
 /**
  * Element Register — master list every takeoff object maps to.
  * Governs unit, measurement rule, default material, takeoff method,
@@ -42,6 +44,12 @@ export type ElementRegisterEntry = {
   overlapRank: number
   implemented: boolean
   kind: 'structural' | 'masonry' | 'finish' | 'earthworks' | 'openings' | 'mep'
+  /**
+   * Floor level types this element may be placed on.
+   * Omit / undefined = all types (unconfirmed mapping).
+   * Client-confirmed stubs only for foundations, vertical structure, walls.
+   */
+  allowedLevelTypes?: FloorLevelType[]
 }
 
 export const ELEMENT_MODULE_TITLES: Record<ElementModuleId, string> = {
@@ -72,6 +80,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 30,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '02',
@@ -90,6 +99,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 35,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '02a',
@@ -109,6 +119,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 36,
     implemented: true,
     kind: 'masonry',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '03',
@@ -127,6 +138,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 40,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '04',
@@ -145,6 +157,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 20,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '05',
@@ -163,6 +176,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 10,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '06',
@@ -181,6 +195,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 80,
     implemented: true,
     kind: 'earthworks',
+    allowedLevelTypes: ['Foundation'],
   },
   {
     code: '07',
@@ -199,6 +214,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 50,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Below-Grade', 'Above-Grade', 'Roof'],
   },
   {
     code: '08',
@@ -217,6 +233,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 60,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Foundation', 'Below-Grade', 'Above-Grade', 'Roof'],
   },
   {
     code: '09',
@@ -235,6 +252,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 55,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Below-Grade', 'Above-Grade', 'Roof'],
   },
   {
     code: '10',
@@ -253,6 +271,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 65,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Below-Grade', 'Above-Grade', 'Roof'],
   },
   {
     code: '11',
@@ -276,6 +295,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 70,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Below-Grade', 'Above-Grade', 'Roof'],
   },
   {
     code: '12',
@@ -294,6 +314,7 @@ export const ELEMENT_REGISTER: ElementRegisterEntry[] = [
     overlapRank: 72,
     implemented: true,
     kind: 'structural',
+    allowedLevelTypes: ['Below-Grade', 'Above-Grade', 'Roof'],
   },
 
   // ─── M2 Architectural & Finishes ───────────────────────────────

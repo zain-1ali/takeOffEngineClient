@@ -66,7 +66,14 @@ export function listFloors(projectId: string) {
 
 export function createFloor(
   projectId: string,
-  body: { floorId: string; label: string; elevation?: number; height?: number },
+  body: {
+    floorId: string
+    label: string
+    elevation?: number
+    height?: number
+    levelTypes?: string[]
+    sortOrder?: number
+  },
 ) {
   return api<{ floor: Floor }>(`/api/projects/${projectId}/floors`, {
     method: 'POST',
@@ -96,6 +103,7 @@ export type DuplicateFloorBody = {
     label: string
     elevation?: number
     height?: number
+    levelTypes?: string[]
   }
 }
 

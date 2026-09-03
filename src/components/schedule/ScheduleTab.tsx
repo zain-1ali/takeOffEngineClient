@@ -235,11 +235,14 @@ export function ScheduleTab({
   floors,
   floorId,
   elementKey,
+  floorLevelException = false,
 }: {
   project: Project
   floors: Floor[]
   floorId: string
   elementKey: string
+  /** Current workspace floor is incompatible but shown via instance exception. */
+  floorLevelException?: boolean
 }) {
   const schema = ELEMENT_ENGINES[elementKey]
   const qc = useQueryClient()
@@ -291,8 +294,16 @@ export function ScheduleTab({
     void qc.invalidateQueries({ queryKey: ['instances', projectId, floorId, elementKey] })
     void qc.invalidateQueries({ queryKey: ['calculate', projectId, floorId, elementKey] })
     void qc.invalidateQueries({ queryKey: ['instance-counts', projectId, floorId] })
+    void qc.invalidateQueries({ queryKey: ['element-floor-ids', projectId, elementKey] })
     void qc.invalidateQueries({ queryKey: ['reports', projectId] })
   }, [qc, projectId, floorId, elementKey])
+
+  function confirmAddOnExceptionFloor(): boolean {
+    if (!floorLevelException) return true
+    return confirm(
+      `This floor doesn't typically support ${schema.label} — continue anyway?`,
+    )
+  }
 
   const addMut = useMutation({
     mutationFn: (args: {
@@ -317,6 +328,11 @@ export function ScheduleTab({
     },
     onSuccess: invalidate,
   })
+
+  function requestAdd(args: { shape: string; geometryPatch?: Record<string, unknown> }) {
+    if (!confirmAddOnExceptionFloor()) return
+    addMut.mutate(args)
+  }
 
   const delMut = useMutation({
     mutationFn: (id: string) => runImmediate(() => deleteInstance(projectId, id)),
@@ -426,6 +442,13 @@ export function ScheduleTab({
             Schedule — floor <span className="font-mono text-ink">{floorId}</span>
             <span className="font-mono text-steel/70 ml-2">{elementKey}</span>
           </p>
+          {floorLevelException ? (
+            <p className="text-[12px] text-amber-200/90 mt-1.5 max-w-xl">
+              This floor is not typically valid for {schema.label}. Existing
+              rows are shown for review (flagged). Creating more is allowed with
+              a confirmation.
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {schema.addButtons.map((btn) =>
@@ -433,7 +456,7 @@ export function ScheduleTab({
               <PrimaryButton
                 key={btn.shape}
                 disabled={addMut.isPending}
-                onClick={() => addMut.mutate({ shape: btn.shape })}
+                onClick={() => requestAdd({ shape: btn.shape })}
                 className="!text-xs !py-2"
               >
                 {btn.label}
@@ -442,7 +465,7 @@ export function ScheduleTab({
               <GhostButton
                 key={btn.shape}
                 disabled={addMut.isPending}
-                onClick={() => addMut.mutate({ shape: btn.shape })}
+                onClick={() => requestAdd({ shape: btn.shape })}
                 className="!text-xs !py-2"
               >
                 {btn.label}
@@ -527,6 +550,7 @@ export function ScheduleTab({
         floors={floors}
         sourceFloorId={floorId}
         instanceIds={[...selectedIds]}
+        elementKey={elementKey}
         title="Duplicate selected to floor"
         onCopied={(res) => {
           if (res.targetFloorId !== floorId) return
@@ -562,6 +586,7 @@ export function ScheduleTab({
         onClose={() => setPlacement(null)}
         onConfirm={(result) => {
           if (!placement) return
+          if (!confirmAddOnExceptionFloor()) return
           const geometryPatch =
             result.mode === 'point'
               ? pointGeometryPatch(result)
@@ -734,6 +759,7 @@ export function ScheduleTab({
                           onMeasureField={(fieldKey) =>
                             setMeasureSession({ instance: inst, fieldKey })
                           }
+                          levelFlagged={floorLevelException}
                           onDelete={() => {
                             if (confirm(`Delete ${inst.mark}?`)) delMut.mutate(inst.id)
                           }}
@@ -861,6 +887,7 @@ function InstanceRow({
   onPatch,
   measureDisabledReason,
   onMeasureField,
+  levelFlagged = false,
   onDelete,
 }: {
   inst: Instance
@@ -876,6 +903,7 @@ function InstanceRow({
   onPatch: (patch: Record<string, unknown>) => void
   measureDisabledReason: string | null
   onMeasureField: (fieldKey: string) => void
+  levelFlagged?: boolean
   onDelete: () => void
 }) {
   const [local, setLocal] = useState(inst)
@@ -1039,7 +1067,14 @@ function InstanceRow({
   }
 
   return (
-    <DataTable.Row className={roomGrouped ? 'border-l-[3px] border-l-signal/40' : undefined}>
+    <DataTable.Row
+      className={[
+        roomGrouped ? 'border-l-[3px] border-l-signal/40' : '',
+        levelFlagged ? 'bg-amber-950/25' : '',
+      ]
+        .filter(Boolean)
+        .join(' ') || undefined}
+    >
       <DataTable.Cell className="w-8">
         <input
           type="checkbox"
@@ -1062,6 +1097,14 @@ function InstanceRow({
             {gridLabel(local.geometry)}
           </div>
         )}
+        {levelFlagged ? (
+          <div
+            className="mt-0.5 text-[10px] text-amber-200/90"
+            title="Floor level type is not typically valid for this element"
+          >
+            ⚠ Floor mismatch
+          </div>
+        ) : null}
         {isStairs && (
           <div className="mt-1 flex flex-col items-start gap-0.5">
             <button

@@ -1,3 +1,4 @@
+import type { FloorLevelType } from '../lib/levelCompatibility'
 import type { RateLib } from './rateLib'
 
 export type AxisLine = { label: string; spacing: number }
@@ -140,6 +141,8 @@ export type Floor = {
   elevation: number
   height: number
   sortOrder: number
+  /** Resolved level types (always ≥1 from API). */
+  levelTypes: FloorLevelType[]
 }
 
 export type Instance = {

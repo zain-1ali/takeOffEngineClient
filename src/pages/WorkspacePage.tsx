@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getProject, listInstances } from '../api/projectsApi'
@@ -18,6 +18,11 @@ import { DrawingsRegisterView } from '../components/drawings/DrawingsRegisterVie
 import { ELEMENT_ENGINES } from '../elementEngines'
 import { findElement, type FlowStepId } from '../constants/elementTree'
 import type { ElementDef } from '../constants/elementTree'
+import { findRegisterEntry } from '../constants/elementRegister'
+import {
+  emptyCompatibleFloorsMessage,
+  filterFloorsForElement,
+} from '../lib/levelCompatibility'
 
 type WorkspaceTab = 'schedule' | 'model' | 'boq' | 'bom' | 'labour'
 
@@ -40,27 +45,75 @@ export default function WorkspacePage() {
 
   const project = projectQuery.data?.project
   const floors = projectQuery.data?.floors ?? []
-  const currentFloorId = floorId || floors[0]?.floorId || 'FDN'
+
+  const showProjectReports = activeStep === 'reports'
+  const showElementRegister = activeStep === 'register'
+  const showDrawingsRegister = activeStep === 'drawings'
+  const hideElementWorkspace =
+    showProjectReports || showElementRegister || showDrawingsRegister
+
+  const registerEntry = useMemo(
+    () => findRegisterEntry(elementKey),
+    [elementKey],
+  )
+  const element = useMemo(() => findElement(elementKey), [elementKey])
+
+  /** Floors that already host this element (for dropdown exception rule). */
+  const elementFloorsQuery = useQuery({
+    queryKey: ['element-floor-ids', projectId, elementKey],
+    queryFn: async () => {
+      const { instances } = await listInstances(projectId, { elementKey })
+      return new Set(instances.map((i) => i.floorId))
+    },
+    enabled: !!projectId && !!elementKey && !hideElementWorkspace,
+  })
+
+  const floorIdsWithElement = elementFloorsQuery.data ?? new Set<string>()
+
+  const floorOptions = useMemo(
+    () =>
+      filterFloorsForElement({
+        floors,
+        allowedLevelTypes: registerEntry?.allowedLevelTypes,
+        floorIdsWithElementInstances: floorIdsWithElement,
+      }),
+    [floors, registerEntry?.allowedLevelTypes, floorIdsWithElement],
+  )
+
+  const currentFloorId =
+    floorId && floorOptions.some((f) => f.floorId === floorId)
+      ? floorId
+      : floorOptions[0]?.floorId ?? floors[0]?.floorId ?? 'FND'
+
+  const currentFloorOption = floorOptions.find(
+    (f) => f.floorId === currentFloorId,
+  )
+  const floorIsExceptionOnly = Boolean(
+    currentFloorOption && !currentFloorOption.compatible,
+  )
+
+  useEffect(() => {
+    if (hideElementWorkspace) return
+    if (floorOptions.length === 0) return
+    if (!floorOptions.some((f) => f.floorId === currentFloorId)) {
+      setFloorId(floorOptions[0].floorId)
+    }
+  }, [hideElementWorkspace, floorOptions, currentFloorId])
 
   const countsQuery = useQuery({
     queryKey: ['instance-counts', projectId, currentFloorId],
     queryFn: async () => {
-      const { instances } = await listInstances(projectId, { floorId: currentFloorId })
+      const { instances } = await listInstances(projectId, {
+        floorId: currentFloorId,
+      })
       const counts: Record<string, number> = {}
       instances.forEach((i) => {
         counts[i.elementKey] = (counts[i.elementKey] || 0) + 1
       })
       return counts
     },
-    enabled: !!projectId && !!currentFloorId,
+    enabled: !!projectId && !!currentFloorId && floorOptions.length > 0,
   })
-
-  const element = useMemo(() => findElement(elementKey), [elementKey])
-  const showProjectReports = activeStep === 'reports'
-  const showElementRegister = activeStep === 'register'
-  const showDrawingsRegister = activeStep === 'drawings'
-  const hideElementWorkspace =
-    showProjectReports || showElementRegister || showDrawingsRegister
 
   function onStep(id: FlowStepId) {
     if (id === 'project') setModal('project')
@@ -129,21 +182,39 @@ export default function WorkspacePage() {
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-bg/20">
           <div className="flex items-center gap-3 px-6 pt-4 flex-shrink-0">
-            <label className="text-xs text-steel flex items-center gap-2">
+            <label className="text-xs text-steel flex items-center gap-2 min-w-0">
               Floor
-              <select
-                className="border border-steel-border bg-panel px-2 py-1 text-xs text-ink font-mono outline-none"
-                value={currentFloorId}
-                onChange={(e) => setFloorId(e.target.value)}
-              >
-                {floors.map((f) => (
-                  <option key={f.id} value={f.floorId}>
-                    {f.floorId} — {f.label}
-                  </option>
-                ))}
-              </select>
+              {!hideElementWorkspace && floorOptions.length === 0 ? (
+                <span className="text-amber-200/90 max-w-md leading-snug">
+                  {emptyCompatibleFloorsMessage({
+                    elementLabel: element?.label || elementKey,
+                    allowedLevelTypes: registerEntry?.allowedLevelTypes,
+                  })}
+                </span>
+              ) : (
+                <select
+                  className="border border-steel-border bg-panel px-2 py-1 text-xs text-ink font-mono outline-none max-w-xs"
+                  value={currentFloorId}
+                  onChange={(e) => setFloorId(e.target.value)}
+                  disabled={
+                    !hideElementWorkspace && floorOptions.length === 0
+                  }
+                >
+                  {(hideElementWorkspace ? floors : floorOptions).map((f) => {
+                    const exception =
+                      'exception' in f ? Boolean(f.exception) : false
+                    return (
+                      <option key={f.id} value={f.floorId}>
+                        {exception ? '⚠ ' : ''}
+                        {f.floorId} — {f.label}
+                        {exception ? ' (flagged items)' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              )}
             </label>
-            {!showDrawingsRegister ? (
+            {!showDrawingsRegister && floorOptions.length > 0 ? (
               <FloorDrawingBar projectId={projectId} floorId={currentFloorId} />
             ) : null}
             {showProjectReports && (
@@ -227,25 +298,42 @@ export default function WorkspacePage() {
               />
             ) : (
               <>
-                {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && (
+                {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && floorOptions.length > 0 && (
                   <ScheduleTab
                     project={project}
                     floors={floors}
                     floorId={currentFloorId}
                     elementKey={elementKey}
+                    floorLevelException={floorIsExceptionOnly}
                   />
+                )}
+                {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && floorOptions.length === 0 && (
+                  <div className="p-8 text-sm text-amber-200/90 max-w-lg">
+                    {emptyCompatibleFloorsMessage({
+                      elementLabel: element?.label || elementKey,
+                      allowedLevelTypes: registerEntry?.allowedLevelTypes,
+                    })}
+                  </div>
                 )}
                 {tab === 'schedule' && !ELEMENT_ENGINES[elementKey] && (
                   <div className="p-8 text-sm text-steel">
                     {element?.label || elementKey} is planned but not implemented yet.
                   </div>
                 )}
-                {tab === 'model' && ELEMENT_ENGINES[elementKey] && (
+                {tab === 'model' && ELEMENT_ENGINES[elementKey] && floorOptions.length > 0 && (
                   <ModelTab
                     project={project}
                     floorId={currentFloorId}
                     elementKey={elementKey}
                   />
+                )}
+                {tab === 'model' && ELEMENT_ENGINES[elementKey] && floorOptions.length === 0 && (
+                  <div className="p-8 text-sm text-amber-200/90 max-w-lg">
+                    {emptyCompatibleFloorsMessage({
+                      elementLabel: element?.label || elementKey,
+                      allowedLevelTypes: registerEntry?.allowedLevelTypes,
+                    })}
+                  </div>
                 )}
                 {tab === 'model' && !ELEMENT_ENGINES[elementKey] && (
                   <div className="p-8 text-sm text-steel">
