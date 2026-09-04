@@ -100,6 +100,11 @@ export function ReportTable({
                         Manual
                       </span>
                     )}
+                    {line.source === 'CATALOGUE' && (
+                      <span className="text-[10px] uppercase tracking-wide text-steel border border-steel-border px-1 py-0.5">
+                        Catalogue
+                      </span>
+                    )}
                     {line.description}
                   </span>
                 </DataTable.Cell>

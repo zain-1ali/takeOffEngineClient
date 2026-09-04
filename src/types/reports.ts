@@ -1,4 +1,4 @@
-export type ReportSource = 'MODELLED' | 'MANUAL'
+export type ReportSource = 'MODELLED' | 'MANUAL' | 'CATALOGUE'
 
 export type ReportLine = {
   kind: 'group' | 'item' | 'total'
@@ -14,6 +14,8 @@ export type ReportLine = {
   nrm2Ref?: string
   quantityBasis?: 'independent' | 'derived' | 'conditional'
   workCategory?: string
+  formulaText?: string
+  applicableLevels?: string[]
 }
 
 export type LabourActivity = {

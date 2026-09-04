@@ -56,7 +56,11 @@ export function ElementReportsTab({
         <p className="text-sm text-danger">Failed to load reports.</p>
       )}
       {!query.isLoading && !bundle && (
-        <p className="text-sm text-steel">No instances on this floor to bill.</p>
+        <p className="text-sm text-steel">
+          No instances on this floor yet. Use the ▸ on this element in the
+          sidebar to Add to BOQ, then enter schedule data or measure from PDF
+          for quantities.
+        </p>
       )}
       {bundle && sub === 'boq' && (
         <>
@@ -66,6 +70,9 @@ export function ElementReportsTab({
           <p className="text-[12.5px] text-steel mb-5">
             {el?.num}. {el?.label} — {floorId} · {bundle.units} unit
             {bundle.units === 1 ? '' : 's'} · {currency}
+            {bundle.boq.some((l) => l.source === 'CATALOGUE')
+              ? ' · catalogue picks included (qty from schedule / measure)'
+              : ''}
           </p>
           <ReportTable lines={bundle.boq} currency={currency} />
         </>

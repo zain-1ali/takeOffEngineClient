@@ -5,11 +5,15 @@ import {
   type ElementDef,
 } from '../../constants/elementTree'
 import { ElementChip } from '../ui'
+import { ElementBoqPicker } from '../boq/ElementBoqPicker'
 
 export function ElementTree({
   selectedKey,
   counts,
   onSelect,
+  projectId,
+  floorId,
+  onBoqItemsAdded,
   registerActive = false,
   onOpenRegister,
   drawingsActive = false,
@@ -18,12 +22,24 @@ export function ElementTree({
   selectedKey: string
   counts: Record<string, number>
   onSelect: (el: ElementDef) => void
+  /** When set with floorId, shows per-element BOQ catalogue picker. */
+  projectId?: string
+  floorId?: string
+  /** After Add to BOQ — e.g. open that element's BOQ tab. */
+  onBoqItemsAdded?: (elementKey: string) => void
   registerActive?: boolean
   onOpenRegister?: () => void
   drawingsActive?: boolean
   onOpenDrawings?: () => void
 }) {
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
+  const [pickerKey, setPickerKey] = useState<string | null>(null)
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
+
+  const pickerEnabled = Boolean(projectId && floorId)
+  const pickerEl = pickerKey
+    ? ELEMENT_TREE.flatMap((m) => m.elements).find((e) => e.key === pickerKey)
+    : undefined
 
   return (
     <aside className="w-[230px] flex-shrink-0 border-r border-steel-border overflow-y-auto py-5 bg-bg/40">
@@ -77,6 +93,7 @@ export function ElementTree({
                 const active = el.key === selectedKey
                 const count = counts[el.key] || 0
                 const num = elementDisplayNum(el)
+                const pickerOpen = pickerKey === el.key
 
                 if (!el.implemented) {
                   return (
@@ -92,29 +109,81 @@ export function ElementTree({
                 }
 
                 return (
-                  <button
+                  <div
                     key={el.key}
-                    type="button"
-                    onClick={() => onSelect(el)}
-                    className={`w-full flex items-center gap-2.5 px-5 py-1.5 text-[13.5px] border-l-2 text-left ${
+                    className={`w-full flex items-center gap-1 pr-2 border-l-2 ${
                       active
                         ? 'bg-panel border-signal font-medium text-ink'
                         : 'border-transparent text-ink/90 hover:bg-panel/60'
                     }`}
                   >
-                    <ElementChip number={num} tone={active ? 'active' : 'default'} />
-                    <span className="truncate flex-1">{el.label}</span>
-                    {count > 0 && (
-                      <span className="font-mono text-[10px] text-steel tabular-nums">
-                        {count}
-                      </span>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(el)}
+                      className="flex-1 flex items-center gap-2.5 px-5 py-1.5 text-[13.5px] text-left min-w-0"
+                    >
+                      <ElementChip
+                        number={num}
+                        tone={active ? 'active' : 'default'}
+                      />
+                      <span className="truncate flex-1">{el.label}</span>
+                      {count > 0 && (
+                        <span className="font-mono text-[10px] text-steel tabular-nums">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                    {pickerEnabled && (
+                      <button
+                        type="button"
+                        data-boq-picker-trigger
+                        title="Detailed BOQ Items"
+                        aria-expanded={pickerOpen}
+                        aria-label={`BOQ items for ${el.label}`}
+                        className={`flex-shrink-0 w-6 h-6 text-[11px] rounded border ${
+                          pickerOpen
+                            ? 'border-signal text-signal bg-panel'
+                            : 'border-steel-border text-steel hover:text-ink hover:border-ink/40'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (pickerKey === el.key) {
+                            setPickerKey(null)
+                            setAnchorRect(null)
+                            return
+                          }
+                          const rect = (
+                            e.currentTarget as HTMLButtonElement
+                          ).getBoundingClientRect()
+                          setAnchorRect(rect)
+                          setPickerKey(el.key)
+                        }}
+                      >
+                        {pickerOpen ? '▾' : '▸'}
+                      </button>
                     )}
-                  </button>
+                  </div>
                 )
               })}
           </div>
         )
       })}
+
+      {pickerKey && pickerEl && projectId && floorId && (
+        <ElementBoqPicker
+          projectId={projectId}
+          floorId={floorId}
+          elementKey={pickerEl.key}
+          elementLabel={pickerEl.label}
+          open
+          anchorRect={anchorRect}
+          onClose={() => {
+            setPickerKey(null)
+            setAnchorRect(null)
+          }}
+          onAdded={onBoqItemsAdded}
+        />
+      )}
     </aside>
   )
 }

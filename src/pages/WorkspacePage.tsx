@@ -174,6 +174,13 @@ export default function WorkspacePage() {
           selectedKey={hideElementWorkspace ? '' : elementKey}
           counts={countsQuery.data || {}}
           onSelect={onSelectElement}
+          projectId={projectId}
+          floorId={currentFloorId}
+          onBoqItemsAdded={(key) => {
+            setElementKey(key)
+            setActiveStep('model')
+            setTab('boq')
+          }}
           registerActive={showElementRegister}
           onOpenRegister={() => setActiveStep('register')}
           drawingsActive={showDrawingsRegister}

@@ -13,6 +13,10 @@ import type { IfcImportJob, IfcWallSuggestion } from '../types/ifcImport'
 import type { RatePdfImportJob, RatePdfSuggestion } from '../types/ratePdfImport'
 import type { ProjectReports } from '../types/reports'
 import type { RateLib } from '../types/rateLib'
+import type {
+  BoqCatalogueListItem,
+  SelectedBoqItem,
+} from '../types/selectedBoq'
 
 export function listProjects() {
   return api<{ projects: ProjectSummary[] }>('/api/projects')
@@ -307,6 +311,50 @@ export function createManualBoqItem(projectId: string, body: ManualBoqInput) {
 export function deleteManualBoqItem(projectId: string, itemId: string) {
   return api<{ ok: boolean }>(
     `/api/projects/${projectId}/manual-boq/${itemId}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function listBoqCatalogue(
+  projectId: string,
+  params: { elementKey: string; floorId?: string },
+) {
+  const q = new URLSearchParams()
+  q.set('elementKey', params.elementKey)
+  if (params.floorId) q.set('floorId', params.floorId)
+  return api<{ elementKey: string; items: BoqCatalogueListItem[] }>(
+    `/api/projects/${projectId}/selected-boq/catalogue?${q.toString()}`,
+  )
+}
+
+export function listSelectedBoqItems(
+  projectId: string,
+  params: { floorId: string; elementKey?: string },
+) {
+  const q = new URLSearchParams()
+  q.set('floorId', params.floorId)
+  if (params.elementKey) q.set('elementKey', params.elementKey)
+  return api<{ items: SelectedBoqItem[] }>(
+    `/api/projects/${projectId}/selected-boq?${q.toString()}`,
+  )
+}
+
+export function addSelectedBoqItems(
+  projectId: string,
+  body: { floorId: string; elementKey: string; catalogueRefs: string[] },
+) {
+  return api<{ items: SelectedBoqItem[]; skipped: string[] }>(
+    `/api/projects/${projectId}/selected-boq`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+export function deleteSelectedBoqItem(projectId: string, itemId: string) {
+  return api<{ ok: boolean }>(
+    `/api/projects/${projectId}/selected-boq/${itemId}`,
     { method: 'DELETE' },
   )
 }
