@@ -40,7 +40,7 @@ export function ElementReportsTab({
 
   if (!implemented) {
     return (
-      <div className="p-8 text-sm text-steel">
+      <div className="p-4 text-sm text-steel">
         Reports are not available for {el?.label || elementKey} yet.
       </div>
     )
@@ -48,61 +48,82 @@ export function ElementReportsTab({
 
   const bundle = query.data?.byElement?.[0]
   const currency = query.data?.currency || project.currency
+  const hasInstances = (bundle?.units || 0) > 0
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto px-4 py-3">
       {query.isLoading && <p className="text-sm text-steel">Building reports…</p>}
       {query.isError && (
         <p className="text-sm text-danger">Failed to load reports.</p>
       )}
       {!query.isLoading && !bundle && (
         <p className="text-sm text-steel">
-          No instances on this floor yet. Use the ▸ on this element in the
-          sidebar to Add to BOQ, then enter schedule data or measure from PDF
-          for quantities.
+          Use ▸ on this element to Add to BOQ, then enter schedule data or measure
+          from PDF for quantities. BOM / Labour need schedule instances.
         </p>
       )}
       {bundle && sub === 'boq' && (
         <>
-          <h3 className="font-display text-xl font-semibold text-ink mb-1">
-            Bill of Quantities
-          </h3>
-          <p className="text-[12.5px] text-steel mb-5">
-            {el?.num}. {el?.label} — {floorId} · {bundle.units} unit
-            {bundle.units === 1 ? '' : 's'} · {currency}
-            {bundle.boq.some((l) => l.source === 'CATALOGUE')
-              ? ' · catalogue picks included (qty from schedule / measure)'
-              : ''}
-          </p>
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <h3 className="font-display text-base font-semibold text-ink">
+              BOQ — {el?.num}. {el?.label}
+            </h3>
+            <p className="text-[11px] text-steel shrink-0">
+              {floorId} · {bundle.units} u · {currency}
+            </p>
+          </div>
           <ReportTable lines={bundle.boq} currency={currency} />
         </>
       )}
       {bundle && sub === 'bom' && (
         <>
-          <h3 className="font-display text-xl font-semibold text-ink mb-1">
-            Bill of Materials
-          </h3>
-          <p className="text-[12.5px] text-steel mb-5">
-            {el?.num}. {el?.label} — {floorId} · raw materials from BOQ · {currency}
-          </p>
-          <ReportTable lines={bundle.bom} currency={currency} />
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <h3 className="font-display text-base font-semibold text-ink">
+              BOM — {el?.num}. {el?.label}
+            </h3>
+            <p className="text-[11px] text-steel shrink-0">
+              {floorId} · {currency}
+            </p>
+          </div>
+          {!hasInstances ? (
+            <p className="text-sm text-steel py-3">
+              BOM needs schedule instances (materials come from measured
+              concrete / formwork / rebar). Add schedule rows or measure from
+              PDF first.
+            </p>
+          ) : (
+            <ReportTable
+              lines={bundle.bom}
+              currency={currency}
+              emptyMessage="No materials for this scope."
+            />
+          )}
         </>
       )}
       {bundle && sub === 'labour' && (
         <>
-          <h3 className="font-display text-xl font-semibold text-ink mb-1">
-            Labour Schedule
-          </h3>
-          <p className="text-[12.5px] text-steel mb-5">
-            {el?.num}. {el?.label} — {floorId} · gang durations · {currency}
-          </p>
-          <LabourTables
-            activities={bundle.labour.activities}
-            trades={bundle.labour.trades}
-            totalManDays={bundle.labour.totalManDays}
-            totalCost={bundle.labour.totalCost}
-            currency={currency}
-          />
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <h3 className="font-display text-base font-semibold text-ink">
+              Labour — {el?.num}. {el?.label}
+            </h3>
+            <p className="text-[11px] text-steel shrink-0">
+              {floorId} · {currency}
+            </p>
+          </div>
+          {!hasInstances ? (
+            <p className="text-sm text-steel py-3">
+              Labour needs schedule instances. Add schedule data or measure from
+              PDF first.
+            </p>
+          ) : (
+            <LabourTables
+              activities={bundle.labour.activities}
+              trades={bundle.labour.trades}
+              totalManDays={bundle.labour.totalManDays}
+              totalCost={bundle.labour.totalCost}
+              currency={currency}
+            />
+          )}
         </>
       )}
     </div>

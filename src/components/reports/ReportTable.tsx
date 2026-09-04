@@ -11,13 +11,6 @@ function fmtQty(qty: number | undefined, line: ReportLine): string {
   return qty.toFixed(dec === 0 ? 0 : dec)
 }
 
-function basisLabel(basis: ReportLine['quantityBasis']): string | null {
-  if (!basis) return null
-  if (basis === 'independent') return 'Ind.'
-  if (basis === 'derived') return 'Der.'
-  return 'Cond.'
-}
-
 export function ReportTable({
   lines,
   currency,
@@ -28,35 +21,30 @@ export function ReportTable({
   emptyMessage?: string
 }) {
   if (!lines.length) {
-    return <p className="text-sm text-steel py-6">{emptyMessage}</p>
+    return <p className="text-sm text-steel py-4">{emptyMessage}</p>
   }
-
-  const showCatalogueCols = lines.some(
-    (l) => l.kind === 'item' && (l.nrm2Ref || l.quantityBasis),
-  )
-  const colCount = showCatalogueCols ? 8 : 6
 
   return (
     <div className="panel-card !p-0 overflow-hidden">
-      <DataTable>
+      <DataTable compact>
         <DataTable.Header>
           <DataTable.Row>
-            <DataTable.HeaderCell className="w-14">Ref</DataTable.HeaderCell>
-            <DataTable.HeaderCell>Description</DataTable.HeaderCell>
-            {showCatalogueCols && (
-              <>
-                <DataTable.HeaderCell className="w-20">NRM2</DataTable.HeaderCell>
-                <DataTable.HeaderCell className="w-14">Basis</DataTable.HeaderCell>
-              </>
-            )}
-            <DataTable.HeaderCell align="right" className="w-20">
+            <DataTable.HeaderCell className="w-12 !py-1.5 text-[11px]">
+              Ref
+            </DataTable.HeaderCell>
+            <DataTable.HeaderCell className="!py-1.5 text-[11px]">
+              Description
+            </DataTable.HeaderCell>
+            <DataTable.HeaderCell align="right" className="w-16 !py-1.5 text-[11px]">
               Qty
             </DataTable.HeaderCell>
-            <DataTable.HeaderCell className="w-12">Unit</DataTable.HeaderCell>
-            <DataTable.HeaderCell align="right" className="w-24">
+            <DataTable.HeaderCell className="w-10 !py-1.5 text-[11px]">
+              Unit
+            </DataTable.HeaderCell>
+            <DataTable.HeaderCell align="right" className="w-20 !py-1.5 text-[11px]">
               Rate
             </DataTable.HeaderCell>
-            <DataTable.HeaderCell align="right" className="w-28">
+            <DataTable.HeaderCell align="right" className="w-24 !py-1.5 text-[11px]">
               Amount
             </DataTable.HeaderCell>
           </DataTable.Row>
@@ -67,11 +55,11 @@ export function ReportTable({
               return (
                 <DataTable.Row key={i} className="!border-0 hover:!bg-transparent">
                   <DataTable.Cell
-                    colSpan={colCount}
-                    className="!py-2 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[11px]"
+                    colSpan={6}
+                    className="!py-1 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[10px]"
                   >
                     {line.source === 'MANUAL' && (
-                      <span className="normal-case tracking-normal text-signal mr-2 font-medium">
+                      <span className="normal-case tracking-normal text-signal mr-1.5 font-medium">
                         Manual
                       </span>
                     )}
@@ -83,8 +71,10 @@ export function ReportTable({
             if (line.kind === 'total') {
               return (
                 <DataTable.Row key={i} totals>
-                  <DataTable.Cell colSpan={colCount - 1}>{line.description}</DataTable.Cell>
-                  <DataTable.Cell numeric className="text-ink font-bold">
+                  <DataTable.Cell colSpan={5} className="!py-1.5 text-[12px]">
+                    {line.description}
+                  </DataTable.Cell>
+                  <DataTable.Cell numeric className="text-ink font-bold !py-1.5 text-[12px]">
                     {formatMoney(line.amount, currency)}
                   </DataTable.Cell>
                 </DataTable.Row>
@@ -92,43 +82,42 @@ export function ReportTable({
             }
             return (
               <DataTable.Row key={i}>
-                <DataTable.Cell className="font-mono text-steel">{line.ref}</DataTable.Cell>
-                <DataTable.Cell>
-                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                <DataTable.Cell className="font-mono text-[11px] text-steel !py-1">
+                  {line.ref}
+                </DataTable.Cell>
+                <DataTable.Cell className="!py-1 text-[12px] leading-snug">
+                  <span className="inline-flex items-start gap-1 flex-wrap">
                     {line.source === 'MANUAL' && (
-                      <span className="text-[10px] uppercase tracking-wide text-signal border border-signal/40 px-1 py-0.5">
+                      <span className="text-[9px] uppercase tracking-wide text-signal border border-signal/40 px-0.5 leading-4">
                         Manual
                       </span>
                     )}
-                    {line.source === 'CATALOGUE' && (
-                      <span className="text-[10px] uppercase tracking-wide text-steel border border-steel-border px-1 py-0.5">
-                        Catalogue
+                    {line.source === 'CATALOGUE' && Number(line.qty) === 0 && (
+                      <span
+                        className="text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
+                        title="Needs schedule data or PDF measure"
+                      >
+                        No qty
                       </span>
                     )}
-                    {line.description}
+                    <span className="line-clamp-2">{line.description}</span>
                   </span>
                 </DataTable.Cell>
-                {showCatalogueCols && (
-                  <>
-                    <DataTable.Cell className="font-mono text-[11px] text-steel">
-                      {line.nrm2Ref || '—'}
-                    </DataTable.Cell>
-                    <DataTable.Cell className="text-[11px] text-steel" title={line.quantityBasis}>
-                      {basisLabel(line.quantityBasis) || '—'}
-                    </DataTable.Cell>
-                  </>
-                )}
                 <DataTable.Cell
                   numeric
-                  className={line.isRebar ? 'text-chalk' : undefined}
+                  className={`!py-1 text-[12px] ${line.isRebar ? 'text-chalk' : ''}`}
                 >
                   {fmtQty(line.qty, line)}
                 </DataTable.Cell>
-                <DataTable.Cell className="text-steel">{line.unit}</DataTable.Cell>
-                <DataTable.Cell numeric className="text-steel">
+                <DataTable.Cell className="text-steel !py-1 text-[11px]">
+                  {line.unit}
+                </DataTable.Cell>
+                <DataTable.Cell numeric className="text-steel !py-1 text-[12px]">
                   {formatMoney(line.rate, currency)}
                 </DataTable.Cell>
-                <DataTable.Cell numeric>{formatMoney(line.amount, currency)}</DataTable.Cell>
+                <DataTable.Cell numeric className="!py-1 text-[12px]">
+                  {formatMoney(line.amount, currency)}
+                </DataTable.Cell>
               </DataTable.Row>
             )
           })}

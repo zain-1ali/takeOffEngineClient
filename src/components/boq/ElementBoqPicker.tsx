@@ -8,8 +8,8 @@ import {
 } from '../../api/projectsApi'
 import { GhostButton, PrimaryButton } from '../ui'
 
-const PANEL_WIDTH = 380
-const PANEL_MAX_HEIGHT = 420
+const PANEL_WIDTH = 360
+const PANEL_MAX_HEIGHT = 560
 const GAP = 8
 
 function clampPanelPosition(anchor: DOMRect): { top: number; left: number } {
@@ -20,8 +20,9 @@ function clampPanelPosition(anchor: DOMRect): { top: number; left: number } {
     left = Math.max(12, anchor.left - GAP - PANEL_WIDTH)
   }
   let top = anchor.top
-  if (top + PANEL_MAX_HEIGHT > vh - 12) {
-    top = Math.max(12, vh - PANEL_MAX_HEIGHT - 12)
+  const maxH = Math.min(PANEL_MAX_HEIGHT, vh - 24)
+  if (top + maxH > vh - 12) {
+    top = Math.max(12, vh - maxH - 12)
   }
   return { top, left }
 }
@@ -183,21 +184,21 @@ export function ElementBoqPicker({
   return createPortal(
     <div
       ref={panelRef}
-      className="fixed z-[80] w-[380px] max-h-[420px] flex flex-col rounded border border-steel-border bg-panel shadow-xl"
+      className="fixed z-[80] w-[360px] max-h-[min(560px,calc(100vh-24px))] flex flex-col rounded border border-steel-border bg-panel shadow-xl"
       style={{ top: pos.top, left: pos.left }}
       role="dialog"
       aria-label={`Add BOQ items for ${elementLabel}`}
     >
-      <div className="flex items-start justify-between gap-2 border-b border-steel-border px-3 py-2 flex-shrink-0">
+      <div className="flex items-start justify-between gap-2 border-b border-steel-border px-2.5 py-1.5 flex-shrink-0">
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold text-ink truncate">
+          <p className="text-[11px] font-semibold text-ink truncate">
             Detailed BOQ Items
           </p>
-          <p className="text-[11px] text-steel truncate">{elementLabel}</p>
+          <p className="text-[10px] text-steel truncate">{elementLabel}</p>
         </div>
         <button
           type="button"
-          className="text-steel hover:text-ink text-sm px-1"
+          className="text-steel hover:text-ink text-sm px-1 leading-none"
           onClick={onClose}
           aria-label="Close"
         >
@@ -205,23 +206,23 @@ export function ElementBoqPicker({
         </button>
       </div>
 
-      <div className="px-3 py-2 border-b border-steel-border space-y-2 flex-shrink-0">
+      <div className="px-2.5 py-1.5 border-b border-steel-border space-y-1 flex-shrink-0">
         <input
           type="search"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by ref or description…"
-          className="w-full border border-steel-border bg-bg px-2 py-1.5 text-[12px] text-ink outline-none"
+          placeholder="Filter ref / text…"
+          className="w-full border border-steel-border bg-bg px-1.5 py-1 text-[11px] text-ink outline-none"
         />
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
-            className="text-[11px] text-chalk hover:underline"
+            className="text-[10px] text-chalk hover:underline"
             onClick={selectAllVisible}
           >
             Select all visible
           </button>
-          <span className="text-[11px] text-steel tabular-nums">
+          <span className="text-[10px] text-steel tabular-nums">
             {pendingCount} selected
           </span>
         </div>
@@ -229,50 +230,49 @@ export function ElementBoqPicker({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {catalogueQuery.isLoading && (
-          <p className="px-3 py-4 text-[12px] text-steel">Loading catalogue…</p>
+          <p className="px-2.5 py-3 text-[11px] text-steel">Loading…</p>
         )}
         {catalogueQuery.isError && (
-          <p className="px-3 py-4 text-[12px] text-danger">
-            Failed to load BOQ catalogue.
+          <p className="px-2.5 py-3 text-[11px] text-danger">
+            Failed to load catalogue.
           </p>
         )}
         {!catalogueQuery.isLoading && filtered.length === 0 && (
-          <p className="px-3 py-4 text-[12px] text-steel">
-            No Detailed BOQ Items for this element
-            {filter ? ' match the filter' : ''}.
+          <p className="px-2.5 py-3 text-[11px] text-steel">
+            No items{filter ? ' match filter' : ''}.
           </p>
         )}
-        <ul className="divide-y divide-steel-border/60">
+        <ul className="divide-y divide-steel-border/50">
           {filtered.map((item) => {
             const onBoq = alreadyOnBoq.has(item.ref)
             const checked = onBoq || selected.has(item.ref)
             return (
               <li key={item.ref}>
                 <label
-                  className={`flex gap-2 px-3 py-2 cursor-pointer hover:bg-panel-hover ${
+                  className={`flex gap-1.5 px-2 py-1 cursor-pointer hover:bg-panel-hover ${
                     onBoq ? 'opacity-60' : ''
                   }`}
                 >
                   <input
                     type="checkbox"
-                    className="mt-0.5 flex-shrink-0"
+                    className="mt-0.5 flex-shrink-0 scale-90"
                     checked={checked}
                     disabled={onBoq}
                     onChange={() => toggle(item.ref)}
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline gap-1.5">
-                      <span className="font-mono text-[11px] text-steel">
+                    <span className="flex items-baseline gap-1">
+                      <span className="font-mono text-[10px] text-steel">
                         {item.ref}
                       </span>
-                      <span className="text-[10px] uppercase tracking-wide text-steel">
+                      <span className="text-[9px] uppercase text-steel">
                         {item.unit}
                       </span>
                       {onBoq && (
-                        <span className="text-[10px] text-signal">On BOQ</span>
+                        <span className="text-[9px] text-signal">On BOQ</span>
                       )}
                     </span>
-                    <span className="block text-[12px] text-ink leading-snug mt-0.5">
+                    <span className="block text-[11px] text-ink leading-tight line-clamp-2">
                       {item.description}
                     </span>
                   </span>
@@ -283,12 +283,13 @@ export function ElementBoqPicker({
         </ul>
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-steel-border px-3 py-2 flex-shrink-0">
-        <GhostButton type="button" onClick={onClose}>
+      <div className="flex items-center justify-end gap-1.5 border-t border-steel-border px-2.5 py-1.5 flex-shrink-0">
+        <GhostButton type="button" className="!px-3 !py-1.5 text-[12px]" onClick={onClose}>
           Cancel
         </GhostButton>
         <PrimaryButton
           type="button"
+          className="!px-3 !py-1.5 text-[12px]"
           disabled={pendingCount === 0 || addMut.isPending}
           onClick={() => addMut.mutate([...selected])}
         >
@@ -296,7 +297,7 @@ export function ElementBoqPicker({
         </PrimaryButton>
       </div>
       {addMut.isError && (
-        <p className="px-3 pb-2 text-[11px] text-danger">
+        <p className="px-2.5 pb-1.5 text-[10px] text-danger">
           Could not add items. Try again.
         </p>
       )}

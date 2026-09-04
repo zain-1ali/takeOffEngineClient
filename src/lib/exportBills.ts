@@ -26,35 +26,24 @@ function fmtQty(line: ReportLine): string {
 }
 
 function linesToHtmlTable(lines: ReportLine[], currency: string): string {
-  const showCatalogueCols = lines.some(
-    (l) => l.kind === 'item' && (l.nrm2Ref || l.quantityBasis),
-  )
-  const colSpan = showCatalogueCols ? 8 : 6
   const rows = lines
     .map((line) => {
       if (line.kind === 'group') {
-        return `<tr class="group-row"><td colspan="${colSpan}">${escapeHtml(line.description)}</td></tr>`
+        return `<tr class="group-row"><td colspan="6">${escapeHtml(line.description)}</td></tr>`
       }
       if (line.kind === 'total') {
-        return `<tr class="total-row"><td colspan="${colSpan - 1}">${escapeHtml(line.description)}</td><td class="num">${escapeHtml(money(line.amount))}</td></tr>`
+        return `<tr class="total-row"><td colspan="5">${escapeHtml(line.description)}</td><td class="num">${escapeHtml(money(line.amount))}</td></tr>`
       }
-      const extra = showCatalogueCols
-        ? `<td>${escapeHtml(line.nrm2Ref || '')}</td><td>${escapeHtml(line.quantityBasis || '')}</td>`
-        : ''
       return (
         `<tr><td>${escapeHtml(line.ref || '')}</td><td>${escapeHtml(line.description)}</td>` +
-        extra +
         `<td class="num">${escapeHtml(fmtQty(line))}</td><td>${escapeHtml(line.unit || '')}</td>` +
         `<td class="num">${escapeHtml(money(line.rate))}</td>` +
         `<td class="num">${escapeHtml(money(line.amount))}</td></tr>`
       )
     })
     .join('')
-  const headExtra = showCatalogueCols
-    ? `<th>NRM2</th><th>Basis</th>`
-    : ''
   return (
-    `<table><thead><tr><th>Ref</th><th>Description</th>${headExtra}<th class="num">Qty</th><th>Unit</th>` +
+    `<table><thead><tr><th>Ref</th><th>Description</th><th class="num">Qty</th><th>Unit</th>` +
     `<th class="num">Rate (${escapeHtml(currency)})</th><th class="num">Amount</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>`
   )
@@ -365,73 +354,32 @@ function linesToAoa(
   currency: string,
   headers = ['Item', 'Description', 'Qty', 'Unit', `Rate (${currency})`, `Amount (${currency})`],
 ): (string | number)[][] {
-  const showCatalogueCols = lines.some(
-    (l) => l.kind === 'item' && (l.nrm2Ref || l.quantityBasis),
-  )
-  const head = showCatalogueCols
-    ? [
-        'Ref',
-        'Description',
-        'NRM2',
-        'Basis',
-        'Qty',
-        'Unit',
-        `Rate (${currency})`,
-        `Amount (${currency})`,
-      ]
-    : headers.map((h) => (h === 'Item' ? 'Ref' : h))
-  const emptyPad = showCatalogueCols ? ['', '', '', '', '', '', ''] : ['', '', '', '', '']
+  const head = headers.map((h) => (h === 'Item' ? 'Ref' : h))
   const aoa: (string | number)[][] = [head]
   lines.forEach((line) => {
     if (line.kind === 'group') {
-      aoa.push([line.description, ...emptyPad])
+      aoa.push([line.description, '', '', '', '', ''])
       return
     }
     if (line.kind === 'total') {
-      if (showCatalogueCols) {
-        aoa.push([
-          '',
-          line.description,
-          '',
-          '',
-          '',
-          '',
-          '',
-          line.amount != null ? +line.amount.toFixed(2) : '',
-        ])
-      } else {
-        aoa.push([
-          '',
-          line.description,
-          '',
-          '',
-          '',
-          line.amount != null ? +line.amount.toFixed(2) : '',
-        ])
-      }
+      aoa.push([
+        '',
+        line.description,
+        '',
+        '',
+        '',
+        line.amount != null ? +line.amount.toFixed(2) : '',
+      ])
       return
     }
-    if (showCatalogueCols) {
-      aoa.push([
-        line.ref || '',
-        line.description,
-        line.nrm2Ref || '',
-        line.quantityBasis || '',
-        line.qty != null ? +fmtQty(line) : '',
-        line.unit || '',
-        line.rate != null ? +line.rate.toFixed(2) : '',
-        line.amount != null ? +line.amount.toFixed(2) : '',
-      ])
-    } else {
-      aoa.push([
-        line.ref || '',
-        line.description,
-        line.qty != null ? +fmtQty(line) : '',
-        line.unit || '',
-        line.rate != null ? +line.rate.toFixed(2) : '',
-        line.amount != null ? +line.amount.toFixed(2) : '',
-      ])
-    }
+    aoa.push([
+      line.ref || '',
+      line.description,
+      line.qty != null ? +fmtQty(line) : '',
+      line.unit || '',
+      line.rate != null ? +line.rate.toFixed(2) : '',
+      line.amount != null ? +line.amount.toFixed(2) : '',
+    ])
   })
   return aoa
 }
