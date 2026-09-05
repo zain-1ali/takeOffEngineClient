@@ -20,7 +20,7 @@ export function ReportTable({
   lines: ReportLine[]
   currency: string
   emptyMessage?: string
-  /** Click a catalogue qty cell to set it (manual / schedule / takeoff). */
+  /** Click a catalogue qty cell to open the takeoff sheet / BBS. */
   onQtyClick?: (line: ReportLine) => void
 }) {
   if (!lines.length) {
@@ -98,7 +98,7 @@ export function ReportTable({
                     {line.source === 'CATALOGUE' && Number(line.qty) === 0 && (
                       <span
                         className="text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
-                        title="Needs schedule data or PDF measure"
+                        title="Click Qty to open the takeoff sheet"
                       >
                         No qty
                       </span>
@@ -114,10 +114,26 @@ export function ReportTable({
                     <button
                       type="button"
                       className="w-full text-right underline decoration-dotted underline-offset-2 hover:text-signal"
-                      title="Set qty: type, schedule, or previous takeoff"
+                      title={
+                        line.unit === 't' || line.unit === 'kg'
+                          ? 'Open bar bending schedule'
+                          : 'Open takeoff sheet'
+                      }
                       onClick={() => onQtyClick(line)}
                     >
-                      {fmtQty(line.qty, line)}
+                      <span className="inline-flex items-baseline justify-end gap-1">
+                        {line.takeoffLinked ? (
+                          <span className="text-[10px] text-chalk" title="Linked measurements">
+                            ↗
+                          </span>
+                        ) : null}
+                        {fmtQty(line.qty, line)}
+                        {line.takeoffLineCount ? (
+                          <span className="text-[10px] text-steel no-underline">
+                            ({line.takeoffLineCount})
+                          </span>
+                        ) : null}
+                      </span>
                     </button>
                   ) : (
                     fmtQty(line.qty, line)

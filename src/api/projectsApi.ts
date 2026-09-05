@@ -15,8 +15,11 @@ import type { ProjectReports } from '../types/reports'
 import type { RateLib } from '../types/rateLib'
 import type {
   BoqCatalogueListItem,
+  BoqTakeoffDetail,
   SelectedBoqItem,
 } from '../types/selectedBoq'
+import type { TakeoffLine } from '../lib/boqTakeoff/measurement'
+import type { BbsBar } from '../lib/boqTakeoff/bbs'
 
 export function listProjects() {
   return api<{ projects: ProjectSummary[] }>('/api/projects')
@@ -366,6 +369,33 @@ export function updateSelectedBoqItem(
 ) {
   return api<{ item: SelectedBoqItem }>(
     `/api/projects/${projectId}/selected-boq/${itemId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+export function getSelectedBoqTakeoff(projectId: string, itemId: string) {
+  return api<{ takeoff: BoqTakeoffDetail }>(
+    `/api/projects/${projectId}/selected-boq/${itemId}/takeoff`,
+  )
+}
+
+export function applySelectedBoqTakeoff(
+  projectId: string,
+  itemId: string,
+  body:
+    | {
+        kind: 'dim'
+        wastePct: number
+        lines: TakeoffLine[]
+        measurementSetId?: string | null
+      }
+    | { kind: 'bbs'; wastePct: number; bars: BbsBar[] },
+) {
+  return api<{ item: SelectedBoqItem; takeoff: BoqTakeoffDetail }>(
+    `/api/projects/${projectId}/selected-boq/${itemId}/takeoff`,
     {
       method: 'PATCH',
       body: JSON.stringify(body),

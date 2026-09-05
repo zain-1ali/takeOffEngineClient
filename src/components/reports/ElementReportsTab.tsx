@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getReports, updateSelectedBoqItem } from '../../api/projectsApi'
+import { useQuery } from '@tanstack/react-query'
+import { getReports } from '../../api/projectsApi'
 import { findElement } from '../../constants/elementTree'
 import { ELEMENT_ENGINES } from '../../elementEngines'
 import type { Project } from '../../types/api'
 import type { ReportLine } from '../../types/reports'
-import { BoqQtyDialog } from '../boq/BoqQtyDialog'
+import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import { LabourTables } from './LabourTables'
 import { ReportTable } from './ReportTable'
 
@@ -26,7 +26,6 @@ export function ElementReportsTab({
 }) {
   const el = findElement(elementKey)
   const implemented = !!ELEMENT_ENGINES[elementKey]
-  const qc = useQueryClient()
   const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
 
   const query = useQuery({
@@ -43,16 +42,6 @@ export function ElementReportsTab({
     queryFn: () =>
       getReports(project.id, { scope: 'floor', floorId, elementKey }),
     enabled: implemented && !!floorId,
-  })
-
-  const qtyMut = useMutation({
-    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
-      updateSelectedBoqItem(project.id, id, { quantity }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
-      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
-      setQtyLine(null)
-    },
   })
 
   if (!implemented) {
@@ -76,8 +65,8 @@ export function ElementReportsTab({
       )}
       {!query.isLoading && !bundle && (
         <p className="text-sm text-steel">
-          Use ▸ on this element to Add to BOQ. Click a Qty cell to type a number,
-          open schedule, or pick a previous takeoff.
+          Use ▸ on this element to Add to BOQ. Click a Qty cell to open the
+          takeoff sheet.
         </p>
       )}
       {bundle && sub === 'boq' && (
@@ -93,7 +82,7 @@ export function ElementReportsTab({
           {!hasBoqItems ? (
             <p className="text-sm text-steel py-3">
               No BOQ items yet. Use ▸ on this element to add catalogue items,
-              then click Qty to enter a number, open schedule, or search takeoff.
+              then click Qty to open the takeoff sheet.
             </p>
           ) : (
             <ReportTable
@@ -154,15 +143,11 @@ export function ElementReportsTab({
         </>
       )}
 
-      <BoqQtyDialog
+      <BoqTakeoffDialog
         open={Boolean(qtyLine)}
         line={qtyLine}
         projectId={project.id}
         onClose={() => setQtyLine(null)}
-        onApplyQty={(quantity) => {
-          if (!qtyLine?.selectedBoqId) return
-          qtyMut.mutate({ id: qtyLine.selectedBoqId, quantity })
-        }}
         onOpenSchedule={() => {
           setQtyLine(null)
           onOpenSchedule?.()

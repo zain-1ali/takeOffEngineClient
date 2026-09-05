@@ -18,6 +18,10 @@ export type ReportLine = {
   applicableLevels?: string[]
   selectedBoqId?: string
   suggestedQty?: number
+  takeoffKind?: '' | 'dim' | 'bbs'
+  measurementSetId?: string | null
+  takeoffLineCount?: number
+  takeoffLinked?: boolean
 }
 
 export type LabourActivity = {
