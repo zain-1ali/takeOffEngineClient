@@ -359,6 +359,38 @@ export function deleteSelectedBoqItem(projectId: string, itemId: string) {
   )
 }
 
+export function updateSelectedBoqItem(
+  projectId: string,
+  itemId: string,
+  body: { quantity: number },
+) {
+  return api<{ item: SelectedBoqItem }>(
+    `/api/projects/${projectId}/selected-boq/${itemId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+export type TakeoffSearchHit = {
+  id: string
+  sheetId: string
+  sheetName: string
+  floorId: string
+  type: string
+  label: string
+  qty: number
+  unit: string
+}
+
+export function searchProjectTakeoffs(projectId: string, q?: string) {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : ''
+  return api<{ items: TakeoffSearchHit[] }>(
+    `/api/projects/${projectId}/selected-boq/takeoffs${qs}`,
+  )
+}
+
 export type UploadProgress = {
   loaded: number
   total: number

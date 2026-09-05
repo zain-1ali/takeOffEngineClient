@@ -15,10 +15,13 @@ export function ReportTable({
   lines,
   currency,
   emptyMessage = 'No quantities to bill.',
+  onQtyClick,
 }: {
   lines: ReportLine[]
   currency: string
   emptyMessage?: string
+  /** Click a catalogue qty cell to set it (manual / schedule / takeoff). */
+  onQtyClick?: (line: ReportLine) => void
 }) {
   if (!lines.length) {
     return <p className="text-sm text-steel py-4">{emptyMessage}</p>
@@ -107,7 +110,18 @@ export function ReportTable({
                   numeric
                   className={`!py-1 text-[12px] ${line.isRebar ? 'text-chalk' : ''}`}
                 >
-                  {fmtQty(line.qty, line)}
+                  {onQtyClick && line.selectedBoqId ? (
+                    <button
+                      type="button"
+                      className="w-full text-right underline decoration-dotted underline-offset-2 hover:text-signal"
+                      title="Set qty: type, schedule, or previous takeoff"
+                      onClick={() => onQtyClick(line)}
+                    >
+                      {fmtQty(line.qty, line)}
+                    </button>
+                  ) : (
+                    fmtQty(line.qty, line)
+                  )}
                 </DataTable.Cell>
                 <DataTable.Cell className="text-steel !py-1 text-[11px]">
                   {line.unit}

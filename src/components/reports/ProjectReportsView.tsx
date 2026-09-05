@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getReports } from '../../api/projectsApi'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getReports, updateSelectedBoqItem } from '../../api/projectsApi'
+import type { ReportLine } from '../../types/reports'
+import { BoqQtyDialog } from '../boq/BoqQtyDialog'
 import {
   exportAllBillExcels,
   exportAllBillPDFs,
@@ -35,6 +37,18 @@ export function ProjectReportsView({
   const [sub, setSub] = useState<ReportSubTab>('boq')
   const [panel, setPanel] = useState<Panel>('reports')
   const [exportBusy, setExportBusy] = useState(false)
+  const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
+  const qc = useQueryClient()
+
+  const qtyMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      updateSelectedBoqItem(project.id, id, { quantity }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      setQtyLine(null)
+    },
+  })
 
   const query = useQuery({
     queryKey: [
@@ -284,7 +298,22 @@ export function ProjectReportsView({
                 <ReportTable
                   lines={data.boq}
                   currency={currency}
-                  emptyMessage="No quantities to bill in this scope."
+                  emptyMessage="No BOQ items yet. Add catalogue items from the sidebar ▸, then click Qty."
+                  onQtyClick={setQtyLine}
+                />
+                <BoqQtyDialog
+                  open={Boolean(qtyLine)}
+                  line={qtyLine}
+                  projectId={project.id}
+                  onClose={() => setQtyLine(null)}
+                  onApplyQty={(quantity) => {
+                    if (!qtyLine?.selectedBoqId) return
+                    qtyMut.mutate({ id: qtyLine.selectedBoqId, quantity })
+                  }}
+                  onOpenSchedule={() => {
+                    setQtyLine(null)
+                    onDone?.()
+                  }}
                 />
               </div>
             )}

@@ -16,6 +16,8 @@ export type ReportLine = {
   workCategory?: string
   formulaText?: string
   applicableLevels?: string[]
+  selectedBoqId?: string
+  suggestedQty?: number
 }
 
 export type LabourActivity = {

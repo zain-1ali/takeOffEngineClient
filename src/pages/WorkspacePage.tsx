@@ -353,6 +353,7 @@ export default function WorkspacePage() {
                     floorId={currentFloorId}
                     elementKey={elementKey}
                     sub={tab}
+                    onOpenSchedule={() => setTab('schedule')}
                   />
                 )}
               </>

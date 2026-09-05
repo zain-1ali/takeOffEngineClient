@@ -1,8 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
-import { getReports } from '../../api/projectsApi'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getReports, updateSelectedBoqItem } from '../../api/projectsApi'
 import { findElement } from '../../constants/elementTree'
 import { ELEMENT_ENGINES } from '../../elementEngines'
 import type { Project } from '../../types/api'
+import type { ReportLine } from '../../types/reports'
+import { BoqQtyDialog } from '../boq/BoqQtyDialog'
 import { LabourTables } from './LabourTables'
 import { ReportTable } from './ReportTable'
 
@@ -13,14 +16,18 @@ export function ElementReportsTab({
   floorId,
   elementKey,
   sub,
+  onOpenSchedule,
 }: {
   project: Project
   floorId: string
   elementKey: string
   sub: ReportSubTab
+  onOpenSchedule?: () => void
 }) {
   const el = findElement(elementKey)
   const implemented = !!ELEMENT_ENGINES[elementKey]
+  const qc = useQueryClient()
+  const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
 
   const query = useQuery({
     queryKey: [
@@ -38,6 +45,16 @@ export function ElementReportsTab({
     enabled: implemented && !!floorId,
   })
 
+  const qtyMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      updateSelectedBoqItem(project.id, id, { quantity }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      setQtyLine(null)
+    },
+  })
+
   if (!implemented) {
     return (
       <div className="p-4 text-sm text-steel">
@@ -49,6 +66,7 @@ export function ElementReportsTab({
   const bundle = query.data?.byElement?.[0]
   const currency = query.data?.currency || project.currency
   const hasInstances = (bundle?.units || 0) > 0
+  const hasBoqItems = Boolean(bundle?.boq.some((l) => l.kind === 'item'))
 
   return (
     <div className="h-full overflow-auto px-4 py-3">
@@ -58,8 +76,8 @@ export function ElementReportsTab({
       )}
       {!query.isLoading && !bundle && (
         <p className="text-sm text-steel">
-          Use ▸ on this element to Add to BOQ, then enter schedule data or measure
-          from PDF for quantities. BOM / Labour need schedule instances.
+          Use ▸ on this element to Add to BOQ. Click a Qty cell to type a number,
+          open schedule, or pick a previous takeoff.
         </p>
       )}
       {bundle && sub === 'boq' && (
@@ -69,10 +87,21 @@ export function ElementReportsTab({
               BOQ — {el?.num}. {el?.label}
             </h3>
             <p className="text-[11px] text-steel shrink-0">
-              {floorId} · {bundle.units} u · {currency}
+              {floorId} · {currency}
             </p>
           </div>
-          <ReportTable lines={bundle.boq} currency={currency} />
+          {!hasBoqItems ? (
+            <p className="text-sm text-steel py-3">
+              No BOQ items yet. Use ▸ on this element to add catalogue items,
+              then click Qty to enter a number, open schedule, or search takeoff.
+            </p>
+          ) : (
+            <ReportTable
+              lines={bundle.boq}
+              currency={currency}
+              onQtyClick={setQtyLine}
+            />
+          )}
         </>
       )}
       {bundle && sub === 'bom' && (
@@ -87,9 +116,8 @@ export function ElementReportsTab({
           </div>
           {!hasInstances ? (
             <p className="text-sm text-steel py-3">
-              BOM needs schedule instances (materials come from measured
-              concrete / formwork / rebar). Add schedule rows or measure from
-              PDF first.
+              BOM still uses schedule instances (materials from measured
+              concrete / formwork / rebar).
             </p>
           ) : (
             <ReportTable
@@ -112,8 +140,7 @@ export function ElementReportsTab({
           </div>
           {!hasInstances ? (
             <p className="text-sm text-steel py-3">
-              Labour needs schedule instances. Add schedule data or measure from
-              PDF first.
+              Labour still uses schedule instances.
             </p>
           ) : (
             <LabourTables
@@ -126,6 +153,21 @@ export function ElementReportsTab({
           )}
         </>
       )}
+
+      <BoqQtyDialog
+        open={Boolean(qtyLine)}
+        line={qtyLine}
+        projectId={project.id}
+        onClose={() => setQtyLine(null)}
+        onApplyQty={(quantity) => {
+          if (!qtyLine?.selectedBoqId) return
+          qtyMut.mutate({ id: qtyLine.selectedBoqId, quantity })
+        }}
+        onOpenSchedule={() => {
+          setQtyLine(null)
+          onOpenSchedule?.()
+        }}
+      />
     </div>
   )
 }
