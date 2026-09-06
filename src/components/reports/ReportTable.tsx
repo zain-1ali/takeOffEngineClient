@@ -16,12 +16,15 @@ export function ReportTable({
   currency,
   emptyMessage = 'No quantities to bill.',
   onQtyClick,
+  onDeleteLine,
 }: {
   lines: ReportLine[]
   currency: string
   emptyMessage?: string
   /** Click a catalogue qty cell to open the takeoff sheet / BBS. */
   onQtyClick?: (line: ReportLine) => void
+  /** Remove a manual BOQ line. */
+  onDeleteLine?: (line: ReportLine) => void
 }) {
   if (!lines.length) {
     return <p className="text-sm text-steel py-4">{emptyMessage}</p>
@@ -50,6 +53,9 @@ export function ReportTable({
             <DataTable.HeaderCell align="right" className="w-24 !py-1.5 text-[11px]">
               Amount
             </DataTable.HeaderCell>
+            {onDeleteLine ? (
+              <DataTable.HeaderCell className="w-8 !py-1.5 text-[11px]" />
+            ) : null}
           </DataTable.Row>
         </DataTable.Header>
         <DataTable.Body>
@@ -58,7 +64,7 @@ export function ReportTable({
               return (
                 <DataTable.Row key={i} className="!border-0 hover:!bg-transparent">
                   <DataTable.Cell
-                    colSpan={6}
+                    colSpan={onDeleteLine ? 7 : 6}
                     className="!py-1 bg-panel-hover font-semibold text-ink uppercase tracking-wide text-[10px]"
                   >
                     {line.source === 'MANUAL' && (
@@ -80,6 +86,7 @@ export function ReportTable({
                   <DataTable.Cell numeric className="text-ink font-bold !py-1.5 text-[12px]">
                     {formatMoney(line.amount, currency)}
                   </DataTable.Cell>
+                  {onDeleteLine ? <DataTable.Cell className="!py-1.5" /> : null}
                 </DataTable.Row>
               )
             }
@@ -148,6 +155,20 @@ export function ReportTable({
                 <DataTable.Cell numeric className="!py-1 text-[12px]">
                   {formatMoney(line.amount, currency)}
                 </DataTable.Cell>
+                {onDeleteLine ? (
+                  <DataTable.Cell className="!py-1">
+                    {line.source === 'MANUAL' && line.selectedBoqId ? (
+                      <button
+                        type="button"
+                        className="text-steel hover:text-danger text-[14px] leading-none px-1"
+                        title="Remove manual line"
+                        onClick={() => onDeleteLine(line)}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </DataTable.Cell>
+                ) : null}
               </DataTable.Row>
             )
           })}

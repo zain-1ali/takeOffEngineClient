@@ -287,7 +287,7 @@ export function ProjectReportsView({
                 <ReportTable
                   lines={data.boq}
                   currency={currency}
-                  emptyMessage="No BOQ items yet. Add catalogue items from the sidebar ▸, then click Qty."
+                  emptyMessage="No BOQ items for this scope yet. Click Qty to open the takeoff sheet."
                   onQtyClick={setQtyLine}
                 />
                 <BoqTakeoffDialog

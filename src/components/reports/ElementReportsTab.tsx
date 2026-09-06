@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getReports } from '../../api/projectsApi'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { deleteSelectedBoqItem, getReports } from '../../api/projectsApi'
 import { findElement } from '../../constants/elementTree'
 import { ELEMENT_ENGINES } from '../../elementEngines'
 import type { Project } from '../../types/api'
 import type { ReportLine } from '../../types/reports'
+import { AddManualBoqLine } from '../boq/AddManualBoqLine'
 import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import { LabourTables } from './LabourTables'
 import { ReportTable } from './ReportTable'
@@ -26,6 +27,7 @@ export function ElementReportsTab({
 }) {
   const el = findElement(elementKey)
   const implemented = !!ELEMENT_ENGINES[elementKey]
+  const qc = useQueryClient()
   const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
 
   const query = useQuery({
@@ -44,6 +46,14 @@ export function ElementReportsTab({
     enabled: implemented && !!floorId,
   })
 
+  const delMut = useMutation({
+    mutationFn: (id: string) => deleteSelectedBoqItem(project.id, id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+    },
+  })
+
   if (!implemented) {
     return (
       <div className="p-4 text-sm text-steel">
@@ -54,8 +64,9 @@ export function ElementReportsTab({
 
   const bundle = query.data?.byElement?.[0]
   const currency = query.data?.currency || project.currency
-  const hasInstances = (bundle?.units || 0) > 0
   const hasBoqItems = Boolean(bundle?.boq.some((l) => l.kind === 'item'))
+  const hasBomItems = Boolean(bundle?.bom.some((l) => l.kind === 'item'))
+  const hasLabour = Boolean((bundle?.labour.activities.length || 0) > 0)
 
   return (
     <div className="h-full overflow-auto px-4 py-3">
@@ -63,11 +74,17 @@ export function ElementReportsTab({
       {query.isError && (
         <p className="text-sm text-danger">Failed to load reports.</p>
       )}
-      {!query.isLoading && !bundle && (
-        <p className="text-sm text-steel">
-          Use ▸ on this element to Add to BOQ. Click a Qty cell to open the
-          takeoff sheet.
-        </p>
+      {!query.isLoading && !bundle && sub === 'boq' && (
+        <>
+          <p className="text-sm text-steel mb-2">
+            No BOQ yet. Add a manual line to start.
+          </p>
+          <AddManualBoqLine
+            projectId={project.id}
+            floorId={floorId}
+            elementKey={elementKey}
+          />
+        </>
       )}
       {bundle && sub === 'boq' && (
         <>
@@ -81,16 +98,28 @@ export function ElementReportsTab({
           </div>
           {!hasBoqItems ? (
             <p className="text-sm text-steel py-3">
-              No BOQ items yet. Use ▸ on this element to add catalogue items,
-              then click Qty to open the takeoff sheet.
+              No BOQ items for this floor yet. Add a manual line below, or wait
+              for catalogue lines to load.
             </p>
           ) : (
             <ReportTable
               lines={bundle.boq}
               currency={currency}
               onQtyClick={setQtyLine}
+              onDeleteLine={(line) => {
+                if (!line.selectedBoqId) return
+                delMut.mutate(line.selectedBoqId)
+              }}
             />
           )}
+          <AddManualBoqLine
+            projectId={project.id}
+            floorId={floorId}
+            elementKey={elementKey}
+            extraCategories={bundle.boq
+              .map((l) => l.workCategory)
+              .filter((c): c is string => Boolean(c))}
+          />
         </>
       )}
       {bundle && sub === 'bom' && (
@@ -103,10 +132,10 @@ export function ElementReportsTab({
               {floorId} · {currency}
             </p>
           </div>
-          {!hasInstances ? (
+          {!hasBomItems ? (
             <p className="text-sm text-steel py-3">
-              BOM still uses schedule instances (materials from measured
-              concrete / formwork / rebar).
+              No materials yet. Take off concrete, formwork or rebar on the BOQ
+              and those quantities will generate the BOM.
             </p>
           ) : (
             <ReportTable
@@ -127,9 +156,10 @@ export function ElementReportsTab({
               {floorId} · {currency}
             </p>
           </div>
-          {!hasInstances ? (
+          {!hasLabour ? (
             <p className="text-sm text-steel py-3">
-              Labour still uses schedule instances.
+              No labour yet. Take off concrete, formwork or rebar on the BOQ
+              and those quantities will generate labour.
             </p>
           ) : (
             <LabourTables

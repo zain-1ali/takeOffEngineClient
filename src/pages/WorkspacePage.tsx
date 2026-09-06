@@ -35,7 +35,7 @@ export default function WorkspacePage() {
   const [modal, setModal] = useState<'project' | 'floors' | 'grid' | null>(null)
   const [elementKey, setElementKey] = useState('PAD_FOOTING')
   const [floorId, setFloorId] = useState<string | null>(null)
-  const [tab, setTab] = useState<WorkspaceTab>('schedule')
+  const [tab, setTab] = useState<WorkspaceTab>('boq')
 
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
@@ -135,7 +135,7 @@ export default function WorkspacePage() {
     if (!el.implemented) return
     setElementKey(el.key)
     setActiveStep('model')
-    setTab('schedule')
+    setTab('boq')
   }
 
   if (projectQuery.isLoading) {
@@ -174,13 +174,6 @@ export default function WorkspacePage() {
           selectedKey={hideElementWorkspace ? '' : elementKey}
           counts={countsQuery.data || {}}
           onSelect={onSelectElement}
-          projectId={projectId}
-          floorId={currentFloorId}
-          onBoqItemsAdded={(key) => {
-            setElementKey(key)
-            setActiveStep('model')
-            setTab('boq')
-          }}
           registerActive={showElementRegister}
           onOpenRegister={() => setActiveStep('register')}
           drawingsActive={showDrawingsRegister}

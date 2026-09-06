@@ -342,6 +342,26 @@ export function listSelectedBoqItems(
   )
 }
 
+export function addManualSelectedBoqItem(
+  projectId: string,
+  body: {
+    floorId: string
+    elementKey: string
+    description: string
+    unit?: string
+    quantity?: number
+    workCategory?: string
+  },
+) {
+  return api<{ item: SelectedBoqItem }>(
+    `/api/projects/${projectId}/selected-boq/manual`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
 export function addSelectedBoqItems(
   projectId: string,
   body: { floorId: string; elementKey: string; catalogueRefs: string[] },
