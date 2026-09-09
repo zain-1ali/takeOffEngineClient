@@ -133,6 +133,11 @@ export type PackAnalysisDetail = {
       compositeRate: number
     }
   }
+  pricing?: {
+    currency: string
+    location: string
+    taxInclusive: boolean
+  }
   applied: {
     compositeRate: number
     rateSource: string

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getReports } from '../../api/projectsApi'
+import { getBoqPack, getReports } from '../../api/projectsApi'
 import type { ReportLine } from '../../types/reports'
 import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import {
@@ -42,6 +42,12 @@ export function ProjectReportsView({
   const [exportBusy, setExportBusy] = useState(false)
   const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
   const [analysisLine, setAnalysisLine] = useState<ReportLine | null>(null)
+
+  const packQuery = useQuery({
+    queryKey: ['boq-pack', project.id],
+    queryFn: () => getBoqPack(project.id),
+  })
+  const hasPack = Boolean(packQuery.data?.pack)
 
   const query = useQuery({
     queryKey: [
@@ -128,20 +134,24 @@ export function ProjectReportsView({
           <h2 className="font-display text-xl font-semibold text-ink">Project reports</h2>
           <p className="text-[12.5px] text-steel mt-1">
             Consolidated BOQ / BOM / Labour / Cost Plan
-            {project.useRateAnalysis !== false
-              ? ' · priced with built-up rates'
-              : ' · priced from rate book'}
+            {hasPack
+              ? ' · priced from the Rates Schedule (open Rate analysis for the East African QS build-up)'
+              : project.useRateAnalysis !== false
+                ? ' · priced with built-up rates'
+                : ' · priced from rate book'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
           <BoqPackUploadPanel projectId={project.id} />
           <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('packRates')}>
-            Pack rates
+            Rate analysis
           </GhostButton>
-          <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('rates')}>
-            Rate Library
-          </GhostButton>
+          {!hasPack && (
+            <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('rates')}>
+              Rate Library
+            </GhostButton>
+          )}
           <GhostButton
             className="!text-xs !py-1.5 !px-3"
             disabled={exportBusy}

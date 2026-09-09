@@ -13,6 +13,15 @@ import { PackAnalysisDrawer } from './PackAnalysisDrawer'
 
 type Tab = 'databank' | 'analyses'
 
+function databankCategoryLabel(cat: string): string {
+  const c = String(cat || '').toUpperCase()
+  if (c === 'MAT') return 'Material'
+  if (c === 'LAB') return 'Labour'
+  if (c === 'PLT') return 'Plant & Tools'
+  if (c === 'SUB') return 'Subcontractor'
+  return cat || '—'
+}
+
 export function PackRatesView({
   project,
   onBack,
@@ -68,9 +77,9 @@ export function PackRatesView({
     <div className="h-full flex flex-col min-h-0">
       <div className="flex flex-wrap items-center gap-3 px-6 py-4 border-b border-steel-border flex-shrink-0">
         <div>
-          <h2 className="font-display text-xl font-semibold text-ink">Pack rates</h2>
+          <h2 className="font-display text-xl font-semibold text-ink">Rate analysis</h2>
           <p className="text-[12.5px] text-steel mt-1">
-            Prices Databank and RATE ANALYSIS from the project catalogue · {currency}
+            PRICES DATABANK and RATE ANALYSIS in East African QS format · {currency}
           </p>
         </div>
         <div className="flex items-center gap-2 ml-auto">
@@ -126,17 +135,22 @@ export function PackRatesView({
             <DataTable.Header>
               <DataTable.Row>
                 <DataTable.HeaderCell>Code</DataTable.HeaderCell>
-                <DataTable.HeaderCell>Description</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Category</DataTable.HeaderCell>
+                <DataTable.HeaderCell>Resource Description</DataTable.HeaderCell>
                 <DataTable.HeaderCell>Unit</DataTable.HeaderCell>
                 <DataTable.HeaderCell align="right">Unit rate</DataTable.HeaderCell>
                 <DataTable.HeaderCell align="right">Waste %</DataTable.HeaderCell>
+                <DataTable.HeaderCell align="right">Rate incl. waste</DataTable.HeaderCell>
                 <DataTable.HeaderCell align="right">Used by</DataTable.HeaderCell>
               </DataTable.Row>
             </DataTable.Header>
             <DataTable.Body>
-              {(resourcesQ.data?.resources || []).map((r) => (
+              {(resourcesQ.data?.resources || []).map((r) => {
+                const incl = (Number(r.unitRate) || 0) * (1 + (Number(r.wastePct) || 0))
+                return (
                 <DataTable.Row key={r.id}>
                   <DataTable.Cell className="font-mono text-[11px]">{r.code}</DataTable.Cell>
+                  <DataTable.Cell className="text-steel">{databankCategoryLabel(r.category)}</DataTable.Cell>
                   <DataTable.Cell>
                     {r.description}
                     {r.staleAnalysisCount > 0 ? (
@@ -165,10 +179,14 @@ export function PackRatesView({
                     />
                   </DataTable.Cell>
                   <DataTable.Cell numeric className="text-steel">
+                    {formatMoney(incl, currency)}
+                  </DataTable.Cell>
+                  <DataTable.Cell numeric className="text-steel">
                     {r.usageCount}
                   </DataTable.Cell>
                 </DataTable.Row>
-              ))}
+                )
+              })}
             </DataTable.Body>
           </DataTable>
         )}
