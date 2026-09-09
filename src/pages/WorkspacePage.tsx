@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getProject, listInstances } from '../api/projectsApi'
+import { getProject, listInstances, getBoqPack } from '../api/projectsApi'
 import { useAuth } from '../auth/AuthContext'
 import { ElementTree } from '../components/layout/ElementTree'
 import { TopBar } from '../components/layout/TopBar'
@@ -19,6 +19,7 @@ import { ELEMENT_ENGINES } from '../elementEngines'
 import { findElement, type FlowStepId } from '../constants/elementTree'
 import type { ElementDef } from '../constants/elementTree'
 import { findRegisterEntry } from '../constants/elementRegister'
+import { mergePackIntoElementTree } from '../lib/mergePackElementTree'
 import {
   emptyCompatibleFloorsMessage,
   filterFloorsForElement,
@@ -52,11 +53,35 @@ export default function WorkspacePage() {
   const hideElementWorkspace =
     showProjectReports || showElementRegister || showDrawingsRegister
 
+  const packQuery = useQuery({
+    queryKey: ['boq-pack', projectId],
+    queryFn: () => getBoqPack(projectId),
+    enabled: !!projectId,
+  })
+  const elementTree = useMemo(
+    () =>
+      mergePackIntoElementTree(
+        packQuery.data?.pack,
+        packQuery.data?.elements,
+      ),
+    [packQuery.data],
+  )
+
   const registerEntry = useMemo(
     () => findRegisterEntry(elementKey),
     [elementKey],
   )
-  const element = useMemo(() => findElement(elementKey), [elementKey])
+  const element = useMemo(
+    () => findElement(elementKey, elementTree),
+    [elementKey, elementTree],
+  )
+  const catalogueOnly = Boolean(element?.catalogueOnly)
+
+  useEffect(() => {
+    if (catalogueOnly && (tab === 'schedule' || tab === 'model')) {
+      setTab('boq')
+    }
+  }, [catalogueOnly, tab])
 
   /** Floors that already host this element (for dropdown exception rule). */
   const elementFloorsQuery = useQuery({
@@ -174,6 +199,8 @@ export default function WorkspacePage() {
           selectedKey={hideElementWorkspace ? '' : elementKey}
           counts={countsQuery.data || {}}
           onSelect={onSelectElement}
+          modules={elementTree}
+          catalogueLoading={packQuery.isPending}
           registerActive={showElementRegister}
           onOpenRegister={() => setActiveStep('register')}
           drawingsActive={showDrawingsRegister}
@@ -241,13 +268,21 @@ export default function WorkspacePage() {
           {!hideElementWorkspace && (
             <div className="flex gap-0.5 px-6 mt-3 border-b border-steel-border flex-shrink-0">
               {(
-                [
-                  ['schedule', 'Schedule'],
-                  ['model', '3D Model'],
-                  ['boq', 'BOQ'],
-                  ['bom', 'BOM'],
-                  ['labour', 'Labour'],
-                ] as const
+                (
+                  catalogueOnly
+                    ? ([
+                        ['boq', 'BOQ'],
+                        ['bom', 'BOM'],
+                        ['labour', 'Labour'],
+                      ] as const)
+                    : ([
+                        ['schedule', 'Schedule'],
+                        ['model', '3D Model'],
+                        ['boq', 'BOQ'],
+                        ['bom', 'BOM'],
+                        ['labour', 'Labour'],
+                      ] as const)
+                )
               ).map(([id, label]) => (
                 <button
                   key={id}
@@ -347,6 +382,10 @@ export default function WorkspacePage() {
                     elementKey={elementKey}
                     sub={tab}
                     onOpenSchedule={() => setTab('schedule')}
+                    catalogueOnly={catalogueOnly}
+                    packScope={element?.packScope}
+                    elementLabel={element?.label}
+                    elementNum={element?.num}
                   />
                 )}
               </>

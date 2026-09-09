@@ -2,6 +2,7 @@ import {
   ELEMENT_TREE,
   elementDisplayNum,
   type ElementDef,
+  type ElementModule,
 } from '../../constants/elementTree'
 import { ElementChip } from '../ui'
 
@@ -13,6 +14,8 @@ export function ElementTree({
   onOpenRegister,
   drawingsActive = false,
   onOpenDrawings,
+  modules = ELEMENT_TREE,
+  catalogueLoading = false,
 }: {
   selectedKey: string
   counts: Record<string, number>
@@ -21,6 +24,8 @@ export function ElementTree({
   onOpenRegister?: () => void
   drawingsActive?: boolean
   onOpenDrawings?: () => void
+  modules?: ElementModule[]
+  catalogueLoading?: boolean
 }) {
   return (
     <aside className="w-[230px] flex-shrink-0 border-r border-steel-border overflow-y-auto py-5 bg-bg/40">
@@ -56,7 +61,12 @@ export function ElementTree({
           </span>
         </button>
       )}
-      {ELEMENT_TREE.map((mod) => {
+      {catalogueLoading && (
+        <p className="px-5 py-2 text-[11px] text-steel leading-snug">
+          Loading Issue Tracker catalogue…
+        </p>
+      )}
+      {modules.map((mod) => {
         const firstImplemented = mod.elements.find((e) => e.implemented)
         return (
           <div key={mod.module}>

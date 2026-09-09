@@ -9,16 +9,18 @@ export class ApiError extends Error {
   status: number
   code?: string
   email?: string
+  details?: string[]
 
   constructor(
     status: number,
     message: string,
-    extras?: { code?: string; email?: string },
+    extras?: { code?: string; email?: string; details?: string[] },
   ) {
     super(message)
     this.status = status
     this.code = extras?.code
     this.email = extras?.email
+    this.details = extras?.details
   }
 }
 

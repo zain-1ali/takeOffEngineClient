@@ -11,6 +11,14 @@ import type { ManualBoqInput, ManualBoqItem } from '../types/manualBoq'
 import type { CostPlanPayload } from '../types/costPlan'
 import type { IfcImportJob, IfcWallSuggestion } from '../types/ifcImport'
 import type { RatePdfImportJob, RatePdfSuggestion } from '../types/ratePdfImport'
+import type {
+  BoqPackElementSummary,
+  BoqPackSummary,
+  BoqPackUploadResult,
+  PackAnalysisDetail,
+  PackAnalysisListRow,
+  PackResourceRow,
+} from '../types/boqPack'
 import type { ProjectReports } from '../types/reports'
 import type { RateLib } from '../types/rateLib'
 import type {
@@ -205,7 +213,178 @@ export function getCostPlan(
   )
 }
 
+export function getBoqPack(projectId: string) {
+  return api<{
+    pack: BoqPackSummary | null
+    elements?: BoqPackElementSummary[]
+  }>(`/api/projects/${projectId}/boq-pack`)
+}
+
+export type PrelimQtyLine = {
+  id: string
+  catalogueRef: string
+  description: string
+  unit: string
+  formulaText: string
+  eligible: boolean
+  skipReason: string | null
+  currentQty: number
+  proposedQty: number | null
+  currentAmount: number | null
+  proposedAmount: number | null
+  basis: 'programmeWeeks' | 'gfaM2' | 'contractValue' | null
+}
+
+export type ApplyPrelimsQtyResult = {
+  dryRun: boolean
+  applied: number
+  eligible: number
+  skipped: number
+  lines: PrelimQtyLine[]
+}
+
+export function applyPrelimsQty(
+  projectId: string,
+  body: { dryRun: boolean; itemIds?: string[] },
+) {
+  return api<ApplyPrelimsQtyResult>(
+    `/api/projects/${projectId}/apply-prelims-qty`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+
+export async function uploadBoqPack(projectId: string, file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  const headers = new Headers()
+  const token = getAccessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(
+    `${API_BASE_URL}/api/projects/${projectId}/boq-pack`,
+    { method: 'POST', body, credentials: 'include', headers },
+  )
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) {
+    const errors = Array.isArray(data?.errors) ? data.errors.map(String) : undefined
+    const detail = errors?.length
+      ? errors.join('; ')
+      : data?.error
+    throw new ApiError(res.status, detail || `Upload failed (${res.status})`, {
+      details: errors,
+    })
+  }
+  return data as BoqPackUploadResult
+}
+
+export function listPackResources(
+  projectId: string,
+  params?: { q?: string; category?: string; packId?: string },
+) {
+  const q = new URLSearchParams()
+  if (params?.q) q.set('q', params.q)
+  if (params?.category) q.set('category', params.category)
+  if (params?.packId) q.set('packId', params.packId)
+  const qs = q.toString()
+  return api<{ packId: string; resources: PackResourceRow[] }>(
+    `/api/projects/${projectId}/boq-pack/resources${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export function patchPackResource(
+  projectId: string,
+  resourceId: string,
+  body: {
+    packId?: string
+    code?: string
+    description?: string
+    unit?: string
+    unitRate?: number
+    wastePct?: number
+  },
+) {
+  return api<{
+    resource: PackResourceRow
+    affectedAnalyses: number
+  }>(`/api/projects/${projectId}/boq-pack/resources/${resourceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function listPackAnalyses(
+  projectId: string,
+  params?: { q?: string; status?: string; limit?: number; offset?: number; packId?: string },
+) {
+  const q = new URLSearchParams()
+  if (params?.q) q.set('q', params.q)
+  if (params?.status) q.set('status', params.status)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.offset != null) q.set('offset', String(params.offset))
+  if (params?.packId) q.set('packId', params.packId)
+  const qs = q.toString()
+  return api<{
+    packId: string
+    total: number
+    staleCount: number
+    invalidCount: number
+    offset: number
+    limit: number
+    analyses: PackAnalysisListRow[]
+  }>(`/api/projects/${projectId}/boq-pack/analyses${qs ? `?${qs}` : ''}`)
+}
+
+export function getPackAnalysis(projectId: string, lineKey: string, packId?: string) {
+  const q = new URLSearchParams()
+  if (packId) q.set('packId', packId)
+  const qs = q.toString()
+  return api<PackAnalysisDetail>(
+    `/api/projects/${projectId}/boq-pack/analyses/${encodeURIComponent(lineKey)}${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export function patchPackAnalysis(
+  projectId: string,
+  lineKey: string,
+  body: {
+    packId?: string
+    revision: number
+    apply?: boolean
+    lines?: Array<{ sourceCode: string; quantity: number; remarks?: string }>
+    allowances?: {
+      transportPctMaterials?: number
+      sundriesPctLabourPlantSubcontract?: number
+      overheadPct?: number
+      profitPct?: number
+    }
+  },
+) {
+  return api<PackAnalysisDetail>(
+    `/api/projects/${projectId}/boq-pack/analyses/${encodeURIComponent(lineKey)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  )
+}
+
+export function recalculatePackAnalyses(
+  projectId: string,
+  body: {
+    packId?: string
+    resourceIds?: string[]
+    lineKeys?: string[]
+    all?: boolean
+    apply: boolean
+  },
+) {
+  return api<{ packId: string; recomputed: number; applied: number; skipped: number }>(
+    `/api/projects/${projectId}/boq-pack/recalculate`,
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+}
 
 export async function startRatePdfImport(projectId: string, file: File) {
   const body = new FormData()

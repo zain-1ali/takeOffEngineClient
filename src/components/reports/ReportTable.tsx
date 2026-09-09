@@ -17,6 +17,7 @@ export function ReportTable({
   emptyMessage = 'No quantities to bill.',
   onQtyClick,
   onDeleteLine,
+  onRateClick,
 }: {
   lines: ReportLine[]
   currency: string
@@ -25,6 +26,8 @@ export function ReportTable({
   onQtyClick?: (line: ReportLine) => void
   /** Remove a manual BOQ line. */
   onDeleteLine?: (line: ReportLine) => void
+  /** Open pack RATE ANALYSIS for this line. */
+  onRateClick?: (line: ReportLine) => void
 }) {
   if (!lines.length) {
     return <p className="text-sm text-steel py-4">{emptyMessage}</p>
@@ -150,7 +153,18 @@ export function ReportTable({
                   {line.unit}
                 </DataTable.Cell>
                 <DataTable.Cell numeric className="text-steel !py-1 text-[12px]">
-                  {formatMoney(line.rate, currency)}
+                  {onRateClick && line.lineKey && line.source === 'CATALOGUE' ? (
+                    <button
+                      type="button"
+                      className="w-full text-right underline decoration-dotted underline-offset-2 hover:text-signal"
+                      title="Open rate analysis"
+                      onClick={() => onRateClick(line)}
+                    >
+                      {formatMoney(line.rate, currency)}
+                    </button>
+                  ) : (
+                    formatMoney(line.rate, currency)
+                  )}
                 </DataTable.Cell>
                 <DataTable.Cell numeric className="!py-1 text-[12px]">
                   {formatMoney(line.amount, currency)}

@@ -39,6 +39,8 @@ export function ProjectModal({
     revision: project.revision,
     date: project.date,
     gfaM2: project.gfaM2 ?? null,
+    programmeWeeks: project.programmeWeeks ?? null,
+    contractValue: project.contractValue ?? null,
     designAllowancePercent: project.designAllowancePercent ?? 6,
     overheadPercent: project.overheadPercent ?? 9,
     profitPercent: project.profitPercent ?? 5,
@@ -67,6 +69,8 @@ export function ProjectModal({
       revision: project.revision,
       date: project.date,
       gfaM2: project.gfaM2 ?? null,
+      programmeWeeks: project.programmeWeeks ?? null,
+      contractValue: project.contractValue ?? null,
       designAllowancePercent: project.designAllowancePercent ?? 6,
       overheadPercent: project.overheadPercent ?? 9,
       profitPercent: project.profitPercent ?? 5,
@@ -238,12 +242,36 @@ export function ProjectModal({
         <Field label="Gross Floor Area (m²)">
           <NumericInput
             className={inputClass}
-            placeholder="Optional — enables Rate/m² on Cost Plan"
+            placeholder="Optional — Cost Plan Rate/m² and Module 0 GFA lines"
             value={form.gfaM2}
             allowEmpty
             min={0}
             onChange={(n) =>
               set('gfaM2', n != null && n > 0 ? n : null)
+            }
+          />
+        </Field>
+        <Field label="Programme duration (weeks)">
+          <NumericInput
+            className={inputClass}
+            placeholder="Optional — Module 0 week lines"
+            value={form.programmeWeeks}
+            allowEmpty
+            min={0}
+            onChange={(n) =>
+              set('programmeWeeks', n != null && n > 0 ? n : null)
+            }
+          />
+        </Field>
+        <Field label="Contract value base (excl. prelims & OH&P)">
+          <NumericInput
+            className={inputClass}
+            placeholder={`Optional — ${project.currency} typed base for % lines`}
+            value={form.contractValue}
+            allowEmpty
+            min={0}
+            onChange={(n) =>
+              set('contractValue', n != null && n > 0 ? n : null)
             }
           />
         </Field>

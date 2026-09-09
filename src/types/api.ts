@@ -75,6 +75,9 @@ export type Project = {
   date: string
   /** Gross Floor Area (m²) for Cost Plan Rate/m². Null/undefined = omit the column. */
   gfaM2?: number | null
+  programmeWeeks?: number | null
+  /** Typed contract-value base excl. prelims & OH&P. */
+  contractValue?: number | null
   /** Cost Plan cascade — percentage points (6 = 6%). */
   designAllowancePercent?: number
   overheadPercent?: number

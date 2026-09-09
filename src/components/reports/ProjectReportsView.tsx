@@ -13,6 +13,9 @@ import {
 import { formatMoney, parseUnitSystem } from '../../lib/units'
 import type { Project } from '../../types/api'
 import { RateLibraryView } from '../rates/RateLibraryView'
+import { PackRatesView } from '../rates/PackRatesView'
+import { PackAnalysisDrawer } from '../rates/PackAnalysisDrawer'
+import { BoqPackUploadPanel } from './BoqPackUploadPanel'
 import { GhostButton, PrimaryButton, StatCard } from '../ui'
 import { CostPlanExportScreen } from './CostPlanExportScreen'
 import { LabourTables } from './LabourTables'
@@ -21,7 +24,7 @@ import { ReportTable } from './ReportTable'
 
 type ReportSubTab = 'boq' | 'bom' | 'labour' | 'costplan'
 type Scope = 'floor' | 'project'
-type Panel = 'reports' | 'rates'
+type Panel = 'reports' | 'rates' | 'packRates'
 
 export function ProjectReportsView({
   project,
@@ -38,6 +41,7 @@ export function ProjectReportsView({
   const [panel, setPanel] = useState<Panel>('reports')
   const [exportBusy, setExportBusy] = useState(false)
   const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
+  const [analysisLine, setAnalysisLine] = useState<ReportLine | null>(null)
 
   const query = useQuery({
     queryKey: [
@@ -65,6 +69,9 @@ export function ProjectReportsView({
 
   if (panel === 'rates') {
     return <RateLibraryView project={project} onBack={() => setPanel('reports')} />
+  }
+  if (panel === 'packRates') {
+    return <PackRatesView project={project} onBack={() => setPanel('reports')} />
   }
 
   // Unified Cost Plan export screen (theme + preview + action bar)
@@ -128,6 +135,10 @@ export function ProjectReportsView({
         </div>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <BoqPackUploadPanel projectId={project.id} />
+          <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('packRates')}>
+            Pack rates
+          </GhostButton>
           <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('rates')}>
             Rate Library
           </GhostButton>
@@ -289,6 +300,7 @@ export function ProjectReportsView({
                   currency={currency}
                   emptyMessage="No BOQ items for this scope yet. Click Qty to open the takeoff sheet."
                   onQtyClick={setQtyLine}
+                  onRateClick={setAnalysisLine}
                 />
                 <BoqTakeoffDialog
                   open={Boolean(qtyLine)}
@@ -300,6 +312,14 @@ export function ProjectReportsView({
                     onDone?.()
                   }}
                 />
+                {analysisLine?.lineKey ? (
+                  <PackAnalysisDrawer
+                    projectId={project.id}
+                    lineKey={analysisLine.lineKey}
+                    currency={currency}
+                    onClose={() => setAnalysisLine(null)}
+                  />
+                ) : null}
               </div>
             )}
             {sub === 'bom' && (

@@ -17,6 +17,8 @@ export type ElementDef = {
   implemented: boolean
   suffix?: string
   code?: string
+  catalogueOnly?: boolean
+  packScope?: 'PROJECT' | 'FLOOR'
 }
 
 export type ElementModule = {
@@ -56,8 +58,11 @@ export const FLOW_STEPS = [
 
 export type FlowStepId = (typeof FLOW_STEPS)[number]['id']
 
-export function findElement(key: string): ElementDef | undefined {
-  for (const mod of ELEMENT_TREE) {
+export function findElement(
+  key: string,
+  tree: ElementModule[] = ELEMENT_TREE,
+): ElementDef | undefined {
+  for (const mod of tree) {
     const el = mod.elements.find((e) => e.key === key)
     if (el) return el
   }
