@@ -10,7 +10,7 @@ import type { Project } from '../../types/api'
 import { GhostButton, PrimaryButton } from '../ui'
 import { Field, Modal, inputClass } from './Modal'
 
-const TARGETS = ['USD', 'EUR', 'GBP', 'CHF', 'CAD', 'AUD', 'JPY', 'KES', 'UGX', 'ZAR']
+import { PROJECT_CURRENCIES } from '../../constants/currencies'
 
 export function ConvertCurrencyModal({
   open,
@@ -23,7 +23,7 @@ export function ConvertCurrencyModal({
 }) {
   const qc = useQueryClient()
   const [toCurrency, setToCurrency] = useState(
-    TARGETS.find((c) => c !== project.currency) || 'EUR',
+    PROJECT_CURRENCIES.find((c) => c !== project.currency) || 'RWF',
   )
   const [quote, setQuote] = useState<CurrencyQuote | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +48,10 @@ export function ConvertCurrencyModal({
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['project', project.id] })
       void qc.invalidateQueries({ queryKey: ['reports'] })
+      void qc.invalidateQueries({ queryKey: ['boq-pack', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-resources', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
       setQuote(null)
       onClose()
     },
@@ -74,10 +78,11 @@ export function ConvertCurrencyModal({
     >
       <div className="space-y-4">
         <p className="text-xs text-steel leading-relaxed">
-          This is an explicit, logged action — not a live toggle. On confirm, every
-          rate-bank unit cost is multiplied by the fetched exchange rate, the project
-          currency updates, and an audit log entry is stored. Values never change from
-          daily rate fluctuation in the background.
+          This is an explicit, logged action — not a live toggle. On confirm, databank
+          unit rates, RATE ANALYSIS totals, Rates Schedule composites, the mix rate
+          library, and typed contract value are multiplied by the fetched rate. Includes
+          RWF and other East African currencies. Values never change from daily
+          fluctuation in the background.
         </p>
 
         <Field label={`Current currency: ${project.currency}`}>
@@ -91,7 +96,7 @@ export function ConvertCurrencyModal({
               setError(null)
             }}
           >
-            {TARGETS.filter((c) => c !== project.currency).map((c) => (
+            {PROJECT_CURRENCIES.filter((c) => c !== project.currency).map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -104,8 +109,8 @@ export function ConvertCurrencyModal({
         {quote && (
           <div className="border border-steel-border bg-panel-hover px-3 py-3 text-sm text-ink">
             1 {quote.fromCurrency} = {quote.rate} {quote.toCurrency} as of{' '}
-            {quote.rateDate} — this will convert all rate items and priced values in
-            this project. Continue?
+            {quote.rateDate} — this will convert all priced values in this project
+            (databank, rate analysis, BOQ rates, mix library). Continue?
           </div>
         )}
 

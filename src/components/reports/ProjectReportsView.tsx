@@ -15,7 +15,6 @@ import type { Project } from '../../types/api'
 import { RateLibraryView } from '../rates/RateLibraryView'
 import { PackRatesView } from '../rates/PackRatesView'
 import { PackAnalysisDrawer } from '../rates/PackAnalysisDrawer'
-import { BoqPackUploadPanel } from './BoqPackUploadPanel'
 import { GhostButton, PrimaryButton, StatCard } from '../ui'
 import { CostPlanExportScreen } from './CostPlanExportScreen'
 import { LabourTables } from './LabourTables'
@@ -143,7 +142,6 @@ export function ProjectReportsView({
         </div>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <BoqPackUploadPanel projectId={project.id} />
           <GhostButton className="!text-xs !py-1.5 !px-3" onClick={() => setPanel('packRates')}>
             Rate analysis
           </GhostButton>

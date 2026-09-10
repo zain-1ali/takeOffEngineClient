@@ -13,6 +13,7 @@ import type { ConcreteMix, Project, ProjectMaterials } from '../../types/api'
 import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { ConvertCurrencyModal } from './ConvertCurrencyModal'
 import { Field, Modal, inputClass } from './Modal'
+import { BoqPackUploadPanel } from '../reports/BoqPackUploadPanel'
 
 const mixInputCls = `${inputClass} !py-1 !px-2 text-xs font-mono`
 
@@ -217,6 +218,11 @@ export function ProjectModal({
             <option value="imperial">{unitSystemLabel('imperial')}</option>
           </select>
         </Field>
+        <div className="sm:col-span-2">
+          <Field label="BOQ workbook">
+            <BoqPackUploadPanel projectId={project.id} variant="inline" />
+          </Field>
+        </div>
         <Field label="Prepared by">
           <input
             className={inputClass}

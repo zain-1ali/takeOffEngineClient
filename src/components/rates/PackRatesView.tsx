@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  createPackResource,
   listPackAnalyses,
   listPackResources,
   patchPackResource,
@@ -33,6 +34,12 @@ export function PackRatesView({
   const [tab, setTab] = useState<Tab>('databank')
   const [q, setQ] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
+  const [newCode, setNewCode] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+  const [newUnit, setNewUnit] = useState('nr')
+  const [newCategory, setNewCategory] = useState('MAT')
+  const [newRate, setNewRate] = useState<number | null>(0)
+  const [newWaste, setNewWaste] = useState<number | null>(0)
 
   const resourcesQ = useQuery({
     queryKey: ['pack-resources', project.id, q],
@@ -57,6 +64,26 @@ export function PackRatesView({
     },
   })
 
+  const addRes = useMutation({
+    mutationFn: () =>
+      createPackResource(project.id, {
+        code: newCode,
+        category: newCategory,
+        description: newDesc,
+        unit: newUnit,
+        unitRate: newRate ?? 0,
+        wastePct: (newWaste ?? 0) / 100,
+      }),
+    onSuccess: () => {
+      setNewCode('')
+      setNewDesc('')
+      setNewUnit('nr')
+      setNewRate(0)
+      setNewWaste(0)
+      void qc.invalidateQueries({ queryKey: ['pack-resources', project.id] })
+    },
+  })
+
   const applyMut = useMutation({
     mutationFn: () => recalculatePackAnalyses(project.id, { apply: true }),
     onSuccess: () => {
@@ -70,7 +97,7 @@ export function PackRatesView({
   const staleCount = analysesQ.data?.staleCount ?? 0
   const err =
     resourcesQ.error || analysesQ.error
-      ? 'Could not load the Issue Tracker catalogue. Check the backend fixture workbook, or replace it from Project reports.'
+      ? 'Could not load the Issue Tracker catalogue. Replace the workbook from Project settings if needed.'
       : null
 
   return (
@@ -128,6 +155,69 @@ export function PackRatesView({
             Uploaded Rates Schedule rates are still billed. Analysis totals differ until you Apply.
             This does not change quantities.
           </p>
+        )}
+
+        {tab === 'databank' && (
+          <div className="mb-4 border border-steel-border px-3 py-3 space-y-2">
+            <p className="text-[12px] font-medium text-ink">Add databank resource</p>
+            <div className="grid grid-cols-2 lg:grid-cols-7 gap-2">
+              <input
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                placeholder="Code"
+                className="border border-steel-border bg-bg px-2 py-1 text-xs outline-none"
+              />
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                className="border border-steel-border bg-bg px-2 py-1 text-xs outline-none"
+              >
+                <option value="MAT">Material</option>
+                <option value="LAB">Labour</option>
+                <option value="PLT">Plant & Tools</option>
+                <option value="SUB">Subcontractor</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <input
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                placeholder="Description"
+                className="lg:col-span-2 border border-steel-border bg-bg px-2 py-1 text-xs outline-none"
+              />
+              <input
+                value={newUnit}
+                onChange={(e) => setNewUnit(e.target.value)}
+                placeholder="Unit"
+                className="border border-steel-border bg-bg px-2 py-1 text-xs outline-none"
+              />
+              <NumericInput
+                value={newRate}
+                rememberFormula={false}
+                placeholder="Unit rate"
+                className="border border-steel-border bg-bg px-2 py-1 text-xs text-right"
+                onChange={(v) => setNewRate(v)}
+              />
+              <NumericInput
+                value={newWaste}
+                rememberFormula={false}
+                placeholder="Waste %"
+                className="border border-steel-border bg-bg px-2 py-1 text-xs text-right"
+                onChange={(v) => setNewWaste(v)}
+              />
+            </div>
+            <GhostButton
+              className="!text-xs !py-1 !px-2"
+              disabled={addRes.isPending || !newCode.trim()}
+              onClick={() => addRes.mutate()}
+            >
+              {addRes.isPending ? 'Adding…' : 'Add resource'}
+            </GhostButton>
+            {addRes.isError && (
+              <p className="text-[11px] text-danger">
+                {(addRes.error as Error)?.message || 'Could not add resource'}
+              </p>
+            )}
+          </div>
         )}
 
         {tab === 'databank' && (

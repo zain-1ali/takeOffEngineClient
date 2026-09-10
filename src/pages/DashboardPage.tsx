@@ -1,11 +1,16 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createProject, deleteProject, getDashboard } from '../api/projectsApi'
+import { createProject, deleteProject, getDashboard, uploadBoqPack } from '../api/projectsApi'
 import { useAuth } from '../auth/AuthContext'
 import { GhostButton, PrimaryButton, StatCard, VerifiedRibbon } from '../components/ui'
 import { ThemeToggle } from '../theme/ThemeToggle'
 import type { DashboardProjectCard } from '../types/api'
+import { ApiError } from '../lib/api'
+import {
+  BOQ_PACK_MAX_UPLOAD_BYTES,
+  BOQ_PACK_MAX_UPLOAD_LABEL,
+} from '../constants/boqPackUpload'
 
 function greeting(name: string): string {
   const hour = new Date().getHours()
@@ -70,6 +75,7 @@ export default function DashboardPage() {
   const [newClient, setNewClient] = useState('')
   const [newContractor, setNewContractor] = useState('')
   const [newConsultant, setNewConsultant] = useState('')
+  const [workbookFile, setWorkbookFile] = useState<File | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const dashQuery = useQuery({
@@ -78,18 +84,32 @@ export default function DashboardPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       name: string
       client: string
       contractor: string
       consultant: string
-    }) =>
-      createProject({
+      workbook: File | null
+    }) => {
+      const data = await createProject({
         name: input.name.trim(),
         client: input.client.trim() || undefined,
         contractor: input.contractor.trim() || undefined,
         consultant: input.consultant.trim() || undefined,
-      }),
+      })
+      let uploadWarning: string | null = null
+      if (input.workbook) {
+        try {
+          await uploadBoqPack(data.project.id, input.workbook)
+        } catch (err) {
+          uploadWarning =
+            err instanceof ApiError
+              ? err.message
+              : 'Workbook upload failed. Replace it from Project settings.'
+        }
+      }
+      return { ...data, uploadWarning }
+    },
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       void qc.invalidateQueries({ queryKey: ['projects'] })
@@ -98,6 +118,12 @@ export default function DashboardPage() {
       setNewClient('')
       setNewContractor('')
       setNewConsultant('')
+      setWorkbookFile(null)
+      if (data.uploadWarning) {
+        window.alert(
+          `${data.uploadWarning} The project was created — open Project settings to upload the workbook.`,
+        )
+      }
       navigate(`/projects/${data.project.id}`)
     },
   })
@@ -137,17 +163,23 @@ export default function DashboardPage() {
     setNewClient('')
     setNewContractor('')
     setNewConsultant('')
+    setWorkbookFile(null)
   }
 
   function onCreate(e: FormEvent) {
     e.preventDefault()
     const name = newName.trim()
     if (!name) return
+    if (workbookFile && workbookFile.size > BOQ_PACK_MAX_UPLOAD_BYTES) {
+      window.alert(`Workbook is too large (max ${BOQ_PACK_MAX_UPLOAD_LABEL})`)
+      return
+    }
     createMut.mutate({
       name,
       client: newClient,
       contractor: newContractor,
       consultant: newConsultant,
+      workbook: workbookFile,
     })
   }
 
@@ -157,6 +189,7 @@ export default function DashboardPage() {
     setNewClient('')
     setNewContractor('')
     setNewConsultant('')
+    setWorkbookFile(null)
   }
 
   const summaryLine = (() => {
@@ -234,6 +267,8 @@ export default function DashboardPage() {
             setNewContractor={setNewContractor}
             newConsultant={newConsultant}
             setNewConsultant={setNewConsultant}
+            workbookFile={workbookFile}
+            setWorkbookFile={setWorkbookFile}
             onStart={startCreate}
             onCancel={cancelCreate}
             onSubmit={onCreate}
@@ -298,6 +333,7 @@ export default function DashboardPage() {
                     placeholder="Optional"
                   />
                 </label>
+                <WorkbookCreateField file={workbookFile} onFile={setWorkbookFile} />
                 <div className="sm:col-span-2 flex gap-2">
                   <PrimaryButton
                     type="submit"
@@ -428,6 +464,31 @@ function Tip({ n, title, children }: { n: string; title: string; children: strin
   )
 }
 
+function WorkbookCreateField({
+  file,
+  onFile,
+}: {
+  file: File | null
+  onFile: (f: File | null) => void
+}) {
+  return (
+    <label className="sm:col-span-2 text-sm">
+      <span className="text-steel text-xs">BOQ workbook (.xlsx) — optional</span>
+      <input
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="mt-1 w-full text-xs text-ink file:mr-2 file:border file:border-steel-border file:bg-bg file:px-2 file:py-1 file:text-xs"
+        onChange={(e) => onFile(e.target.files?.[0] || null)}
+      />
+      <span className="block mt-1 text-[11px] text-steel leading-snug">
+        {file
+          ? file.name
+          : `Leave empty to start with the default Issue Tracker (max ${BOQ_PACK_MAX_UPLOAD_LABEL}). You can also replace it later in Project settings.`}
+      </span>
+    </label>
+  )
+}
+
 function EmptyHome({
   name,
   creating,
@@ -439,6 +500,8 @@ function EmptyHome({
   setNewContractor,
   newConsultant,
   setNewConsultant,
+  workbookFile,
+  setWorkbookFile,
   onStart,
   onCancel,
   onSubmit,
@@ -454,6 +517,8 @@ function EmptyHome({
   setNewContractor: (v: string) => void
   newConsultant: string
   setNewConsultant: (v: string) => void
+  workbookFile: File | null
+  setWorkbookFile: (v: File | null) => void
   onStart: () => void
   onCancel: () => void
   onSubmit: (e: FormEvent) => void
@@ -512,6 +577,7 @@ function EmptyHome({
               placeholder="Optional"
             />
           </label>
+          <WorkbookCreateField file={workbookFile} onFile={setWorkbookFile} />
           <div className="flex gap-2 justify-center">
             <PrimaryButton type="submit" disabled={pending || !newName.trim()}>
               {pending ? 'Creating…' : 'Create project'}

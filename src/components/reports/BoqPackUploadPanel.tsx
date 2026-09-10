@@ -17,7 +17,13 @@ function formatWhen(iso: string): string {
   return d.toLocaleString()
 }
 
-export function BoqPackUploadPanel({ projectId }: { projectId: string }) {
+export function BoqPackUploadPanel({
+  projectId,
+  variant = 'button',
+}: {
+  projectId: string
+  variant?: 'button' | 'inline'
+}) {
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -91,28 +97,7 @@ export function BoqPackUploadPanel({ projectId }: { projectId: string }) {
       }`
     : 'Default Issue Tracker (not loaded yet)'
 
-  return (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-        className="hidden"
-        onChange={(e) => {
-          setFile(e.target.files?.[0] || null)
-          setError(null)
-          setErrorList([])
-          setResult(null)
-        }}
-      />
-      <GhostButton
-        className="!text-xs !py-1.5 !px-3"
-        onClick={() => setOpen(true)}
-      >
-        Replace BOQ workbook
-      </GhostButton>
-
-      <Modal open={open} title="Replace BOQ catalogue" onClose={close} size="lg">
+  const form = (
         <div className="space-y-4">
           <p className="text-xs text-steel leading-relaxed">
             Every project already starts with the Issue Tracker catalogue
@@ -187,13 +172,15 @@ export function BoqPackUploadPanel({ projectId }: { projectId: string }) {
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <GhostButton
-              className="!text-xs !py-1.5 !px-3"
-              disabled={busy}
-              onClick={close}
-            >
-              {result ? 'Close' : 'Cancel'}
-            </GhostButton>
+            {variant === 'button' && (
+              <GhostButton
+                className="!text-xs !py-1.5 !px-3"
+                disabled={busy}
+                onClick={close}
+              >
+                {result ? 'Close' : 'Cancel'}
+              </GhostButton>
+            )}
             <PrimaryButton
               className="!text-xs !py-2"
               disabled={busy || !file}
@@ -205,7 +192,37 @@ export function BoqPackUploadPanel({ projectId }: { projectId: string }) {
             </PrimaryButton>
           </div>
         </div>
-      </Modal>
+  )
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="hidden"
+        onChange={(e) => {
+          setFile(e.target.files?.[0] || null)
+          setError(null)
+          setErrorList([])
+          setResult(null)
+        }}
+      />
+      {variant === 'inline' ? (
+        <div className="border border-steel-border px-3 py-3">{form}</div>
+      ) : (
+        <>
+          <GhostButton
+            className="!text-xs !py-1.5 !px-3"
+            onClick={() => setOpen(true)}
+          >
+            Replace BOQ workbook
+          </GhostButton>
+          <Modal open={open} title="Replace BOQ catalogue" onClose={close} size="lg">
+            {form}
+          </Modal>
+        </>
+      )}
     </>
   )
 }

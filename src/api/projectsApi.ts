@@ -296,6 +296,24 @@ export function listPackResources(
   )
 }
 
+export function createPackResource(
+  projectId: string,
+  body: {
+    packId?: string
+    code: string
+    category?: string
+    description?: string
+    unit?: string
+    unitRate?: number
+    wastePct?: number
+  },
+) {
+  return api<{ resource: PackResourceRow }>(
+    `/api/projects/${projectId}/boq-pack/resources`,
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+}
+
 export function patchPackResource(
   projectId: string,
   resourceId: string,
