@@ -64,4 +64,14 @@ export type BoqTakeoffDetail = {
   bars: import('../lib/boqTakeoff/bbs').BbsBar[]
   sharedBy: BoqTakeoffSharedBy[]
   linkTargets: BoqTakeoffLinkTarget[]
+  pdfMeasurements: Array<{
+    id: string
+    sheetId: string
+    sheetName: string
+    label: string
+    type: 'LINEAR' | 'AREA' | 'COUNT'
+    value: number
+    unit: string
+    line: import('../lib/boqTakeoff/measurement').TakeoffLine
+  }>
 }

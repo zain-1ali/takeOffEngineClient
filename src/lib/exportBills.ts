@@ -154,12 +154,31 @@ function labourToHtml(reports: ProjectReports, currency: string): string {
   )
 }
 
-function openPrintDocument(title: string, bodyHtml: string) {
+export function reserveReportWindow(): Window | null {
   const win = window.open('', '_blank')
+  if (!win) {
+    alert('Please allow pop-ups to export the PDF.')
+    return null
+  }
+  win.document.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Preparing report…</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:24px">Preparing report…</body></html>',
+  )
+  win.document.close()
+  return win
+}
+
+function openPrintDocument(
+  title: string,
+  bodyHtml: string,
+  reservedWindow?: Window | null,
+) {
+  const win = reservedWindow || window.open('', '_blank')
   if (!win) {
     alert('Please allow pop-ups to export the PDF.')
     return
   }
+  win.document.open()
   win.document.write(
     `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
       `<style>${billCss()}</style></head><body>${bodyHtml}</body></html>`,
@@ -176,6 +195,7 @@ export function exportBillPDF(
   project: Project,
   reports: ProjectReports,
   kind: BillExportKind,
+  reservedWindow?: Window | null,
 ) {
   const cur = reports.currency || project.currency
   const title = `${project.name} — ${BILL_TITLES[kind]}`
@@ -184,15 +204,25 @@ export function exportBillPDF(
   if (kind === 'boq') body += linesToHtmlTable(reports.boq, cur)
   else if (kind === 'bom') body += linesToHtmlTable(reports.bom, cur)
   else body += labourToHtml(reports, cur)
-  openPrintDocument(title, body)
+  openPrintDocument(title, body, reservedWindow)
 }
 
-/** Download three separate PDF print documents (BOQ, BOM, Labour). */
-export function exportAllBillPDFs(project: Project, reports: ProjectReports) {
-  const kinds: BillExportKind[] = ['boq', 'bom', 'labour']
-  kinds.forEach((kind, i) => {
-    setTimeout(() => exportBillPDF(project, reports, kind), i * 450)
-  })
+/** One printable report containing BOQ, BOM, and Labour (one popup only). */
+export function exportAllBillPDFs(
+  project: Project,
+  reports: ProjectReports,
+  reservedWindow?: Window | null,
+) {
+  const cur = reports.currency || project.currency
+  const body =
+    projectMetaHtml(project, cur) +
+    `<h2>${escapeHtml(BILL_TITLES.boq)}</h2>` +
+    linesToHtmlTable(reports.boq, cur) +
+    `<h2>${escapeHtml(BILL_TITLES.bom)}</h2>` +
+    linesToHtmlTable(reports.bom, cur) +
+    `<h2>${escapeHtml(BILL_TITLES.labour)}</h2>` +
+    labourToHtml(reports, cur)
+  openPrintDocument(`${project.name} — Complete report`, body, reservedWindow)
 }
 
 /** @deprecated Use exportAllBillPDFs — kept as alias. */

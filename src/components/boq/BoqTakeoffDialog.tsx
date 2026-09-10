@@ -91,6 +91,7 @@ export function BoqTakeoffDialog({
             measurementSetId={takeoff.measurementSetId}
             sharedBy={takeoff.sharedBy}
             linkTargets={takeoff.linkTargets}
+            pdfMeasurements={takeoff.pdfMeasurements}
             onOpenSchedule={onOpenSchedule}
             onApply={({ wastePct, lines, measurementSetId }) =>
               mut.mutate({ kind: 'dim', wastePct, lines, measurementSetId })

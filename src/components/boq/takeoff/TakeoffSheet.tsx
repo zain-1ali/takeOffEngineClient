@@ -33,6 +33,7 @@ export function TakeoffSheet({
   measurementSetId,
   sharedBy,
   linkTargets,
+  pdfMeasurements,
   onApply,
   onOpenSchedule,
 }: {
@@ -47,6 +48,16 @@ export function TakeoffSheet({
   measurementSetId: string | null
   sharedBy: BoqTakeoffSharedBy[]
   linkTargets: BoqTakeoffLinkTarget[]
+  pdfMeasurements: Array<{
+    id: string
+    sheetId: string
+    sheetName: string
+    label: string
+    type: 'LINEAR' | 'AREA' | 'COUNT'
+    value: number
+    unit: string
+    line: TakeoffLine
+  }>
   onApply: (payload: {
     wastePct: number
     lines: TakeoffLine[]
@@ -59,12 +70,14 @@ export function TakeoffSheet({
   const [lines, setLines] = useState<TakeoffLine[]>([])
   const [activeSetId, setActiveSetId] = useState<string | null>(measurementSetId)
   const [showLink, setShowLink] = useState(false)
+  const [showPdfMeasures, setShowPdfMeasures] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setWastePct(String(initialWaste ?? 0))
     setActiveSetId(measurementSetId)
     setShowLink(false)
+    setShowPdfMeasures(false)
     const seeded =
       initialLines.length > 0
         ? initialLines.map((l) => ({ ...l, dims: { ...(l.dims || {}) } }))
@@ -112,6 +125,27 @@ export function TakeoffSheet({
     setActiveSetId(t.setId)
     setShowLink(false)
     setLines((t.lines || []).map((l) => ({ ...l, dims: { ...(l.dims || {}) } })))
+  }
+
+  const addPdfMeasurement = (line: TakeoffLine) => {
+    setLines((current) => {
+      if (
+        line.pdfTakeoffItemId &&
+        current.some((row) => row.pdfTakeoffItemId === line.pdfTakeoffItemId)
+      ) {
+        return current
+      }
+      const starter = current[0]
+      const withoutBlankStarter =
+        current.length === 1 &&
+        !starter.pdfTakeoffItemId &&
+        !String(starter.label || '').trim() &&
+        !Object.values(starter.dims || {}).some(Boolean)
+          ? []
+          : current
+      return [...withoutBlankStarter, { ...line }]
+    })
+    setShowPdfMeasures(false)
   }
 
   const unlink = () => {
@@ -214,6 +248,48 @@ export function TakeoffSheet({
                   <span className="block truncate text-steel">{t.description}</span>
                 </button>
               ))}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowPdfMeasures((shown) => !shown)}
+            disabled={pdfMeasurements.length === 0}
+            className="inline-flex items-center gap-1 rounded border border-steel-border px-2 py-1 text-[11px] text-steel hover:text-ink disabled:opacity-40"
+            title={
+              pdfMeasurements.length
+                ? 'Use a measurement traced on the floor PDF'
+                : 'No compatible measurements exist on this floor PDF'
+            }
+          >
+            PDF measure ({pdfMeasurements.length})
+          </button>
+          {showPdfMeasures ? (
+            <div className="absolute left-40 top-10 z-20 max-h-72 w-[28rem] overflow-auto border border-steel-border bg-panel p-1 shadow-xl">
+              {pdfMeasurements.map((measurement) => {
+                const alreadyUsed = lines.some(
+                  (line) => line.pdfTakeoffItemId === measurement.id,
+                )
+                return (
+                  <button
+                    key={measurement.id}
+                    type="button"
+                    disabled={alreadyUsed}
+                    onClick={() => addPdfMeasurement(measurement.line)}
+                    className="block w-full rounded px-2 py-1.5 text-left text-[11px] hover:bg-panel-hover disabled:opacity-40"
+                  >
+                    <span className="font-medium text-ink">
+                      {measurement.label}
+                    </span>{' '}
+                    <span className="text-steel">
+                      · {measurement.value.toLocaleString()} {measurement.unit}
+                    </span>
+                    <span className="block truncate text-steel">
+                      {measurement.sheetName}
+                      {alreadyUsed ? ' · already linked' : ''}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           ) : null}
         </div>

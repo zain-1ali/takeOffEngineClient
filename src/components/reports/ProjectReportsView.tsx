@@ -8,6 +8,7 @@ import {
   exportAllBillPDFs,
   exportBillExcel,
   exportBillPDF,
+  reserveReportWindow,
   type BillExportKind,
 } from '../../lib/exportBills'
 import { formatMoney, parseUnitSystem } from '../../lib/units'
@@ -101,12 +102,15 @@ export function ProjectReportsView({
   }
 
   async function doExportAll(format: 'pdf' | 'xlsx') {
+    const reportWindow = format === 'pdf' ? reserveReportWindow() : null
+    if (format === 'pdf' && !reportWindow) return
     setExportBusy(true)
     try {
       const reports = await loadExportReports()
-      if (format === 'pdf') exportAllBillPDFs(project, reports)
+      if (format === 'pdf') exportAllBillPDFs(project, reports, reportWindow)
       else exportAllBillExcels(project, reports)
     } catch {
+      reportWindow?.close()
       alert('Export failed — could not load project reports.')
     } finally {
       setExportBusy(false)
@@ -114,12 +118,15 @@ export function ProjectReportsView({
   }
 
   async function doExportOne(format: 'pdf' | 'xlsx', bill: BillExportKind) {
+    const reportWindow = format === 'pdf' ? reserveReportWindow() : null
+    if (format === 'pdf' && !reportWindow) return
     setExportBusy(true)
     try {
       const reports = await loadExportReports()
-      if (format === 'pdf') exportBillPDF(project, reports, bill)
+      if (format === 'pdf') exportBillPDF(project, reports, bill, reportWindow)
       else exportBillExcel(project, reports, bill)
     } catch {
+      reportWindow?.close()
       alert('Export failed — could not load project reports.')
     } finally {
       setExportBusy(false)
@@ -204,7 +211,7 @@ export function ProjectReportsView({
             disabled={exportBusy}
             onClick={() => void doExportAll('pdf')}
           >
-            All PDF (3)
+            Complete PDF
           </GhostButton>
           <PrimaryButton
             className="!text-xs !py-1.5 !px-3"

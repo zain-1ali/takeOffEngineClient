@@ -464,6 +464,7 @@ export type CurrencyQuote = {
   rate: number
   rateDate: string
   fetchedAt: string
+  source?: 'frankfurter' | 'open-er-api'
 }
 
 export function quoteCurrencyConversion(projectId: string, toCurrency: string) {
@@ -476,7 +477,11 @@ export function quoteCurrencyConversion(projectId: string, toCurrency: string) {
   )
 }
 
-export function confirmCurrencyConversion(projectId: string, quoteId: string) {
+export function confirmCurrencyConversion(
+  projectId: string,
+  quoteId: string,
+  rate?: number,
+) {
   return api<{
     project: Project
     conversion: {
@@ -490,7 +495,7 @@ export function confirmCurrencyConversion(projectId: string, quoteId: string) {
     }
   }>(`/api/projects/${projectId}/convert-currency`, {
     method: 'POST',
-    body: JSON.stringify({ quoteId }),
+    body: JSON.stringify({ quoteId, rate }),
   })
 }
 

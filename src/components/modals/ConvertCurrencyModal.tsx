@@ -7,7 +7,7 @@ import {
 } from '../../api/projectsApi'
 import { ApiError } from '../../lib/api'
 import type { Project } from '../../types/api'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { Field, Modal, inputClass } from './Modal'
 
 import { PROJECT_CURRENCIES } from '../../constants/currencies'
@@ -26,12 +26,14 @@ export function ConvertCurrencyModal({
     PROJECT_CURRENCIES.find((c) => c !== project.currency) || 'RWF',
   )
   const [quote, setQuote] = useState<CurrencyQuote | null>(null)
+  const [rateToUse, setRateToUse] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const quoteMut = useMutation({
     mutationFn: () => quoteCurrencyConversion(project.id, toCurrency),
     onSuccess: (data) => {
       setQuote(data.quote)
+      setRateToUse(data.quote.rate)
       setError(null)
     },
     onError: (err) => {
@@ -43,7 +45,11 @@ export function ConvertCurrencyModal({
   const confirmMut = useMutation({
     mutationFn: () => {
       if (!quote) throw new Error('No quote')
-      return confirmCurrencyConversion(project.id, quote.quoteId)
+      return confirmCurrencyConversion(
+        project.id,
+        quote.quoteId,
+        rateToUse ?? undefined,
+      )
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['project', project.id] })
@@ -62,6 +68,7 @@ export function ConvertCurrencyModal({
 
   function reset() {
     setQuote(null)
+    setRateToUse(null)
     setError(null)
     quoteMut.reset()
     confirmMut.reset()
@@ -107,10 +114,31 @@ export function ConvertCurrencyModal({
         {error && <p className="text-sm text-danger">{error}</p>}
 
         {quote && (
-          <div className="border border-steel-border bg-panel-hover px-3 py-3 text-sm text-ink">
-            1 {quote.fromCurrency} = {quote.rate} {quote.toCurrency} as of{' '}
-            {quote.rateDate} — this will convert all priced values in this project
-            (databank, rate analysis, BOQ rates, mix library). Continue?
+          <div className="space-y-3 border border-steel-border bg-panel-hover px-3 py-3 text-sm text-ink">
+            <p>
+              Published midpoint: 1 {quote.fromCurrency} ={' '}
+              {quote.rate.toLocaleString(undefined, { maximumFractionDigits: 6 })}{' '}
+              {quote.toCurrency} as of {quote.rateDate}
+              {quote.source
+                ? ` (${quote.source === 'frankfurter' ? 'ECB' : 'open exchange rates'})`
+                : ''}
+              .
+            </p>
+            <Field label={`Rate to use (1 ${quote.fromCurrency} in ${quote.toCurrency})`}>
+              <NumericInput
+                className={inputClass}
+                value={rateToUse}
+                min={0}
+                allowEmpty={false}
+                rememberFormula={false}
+                onChange={setRateToUse}
+              />
+            </Field>
+            <p className="text-xs text-steel">
+              Edit this to your bank, central-bank, or contract rate when it differs
+              from the published midpoint. The exact confirmed rate is stored in the
+              conversion log and applied to databank, analysis, BOQ, and mix rates.
+            </p>
           </div>
         )}
 
@@ -138,6 +166,7 @@ export function ConvertCurrencyModal({
                 className="!text-xs !py-1.5 !px-3"
                 onClick={() => {
                   setQuote(null)
+                  setRateToUse(null)
                   setError(null)
                 }}
               >
@@ -145,7 +174,12 @@ export function ConvertCurrencyModal({
               </GhostButton>
               <PrimaryButton
                 className="!text-xs !py-2"
-                disabled={confirmMut.isPending}
+                disabled={
+                  confirmMut.isPending ||
+                  rateToUse == null ||
+                  !Number.isFinite(rateToUse) ||
+                  rateToUse <= 0
+                }
                 onClick={() => confirmMut.mutate()}
               >
                 {confirmMut.isPending ? 'Converting…' : 'Confirm conversion'}
