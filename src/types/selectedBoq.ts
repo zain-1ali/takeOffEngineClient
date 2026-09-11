@@ -57,6 +57,7 @@ export type BoqTakeoffDetail = {
   ref: string
   description: string
   elementKey: string
+  floorId?: string
   wastePct: number
   measurementSetId: string | null
   linked: boolean

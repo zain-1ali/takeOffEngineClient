@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { formatMoney } from '../../lib/units'
 import type { ReportLine } from '../../types/reports'
 import { DataTable } from '../ui'
@@ -18,6 +19,7 @@ export function ReportTable({
   onQtyClick,
   onDeleteLine,
   onRateClick,
+  onDescriptionChange,
 }: {
   lines: ReportLine[]
   currency: string
@@ -28,6 +30,8 @@ export function ReportTable({
   onDeleteLine?: (line: ReportLine) => void
   /** Open pack RATE ANALYSIS for this line. */
   onRateClick?: (line: ReportLine) => void
+  /** Persist an editable BOQ item description. */
+  onDescriptionChange?: (line: ReportLine, description: string) => void
 }) {
   if (!lines.length) {
     return <p className="text-sm text-steel py-4">{emptyMessage}</p>
@@ -113,7 +117,17 @@ export function ReportTable({
                         No qty
                       </span>
                     )}
-                    <span className="line-clamp-2">{line.description}</span>
+                    {onDescriptionChange &&
+                    (line.selectedBoqId || line.manualBoqId) ? (
+                      <EditableDescription
+                        value={line.description}
+                        onSave={(description) =>
+                          onDescriptionChange(line, description)
+                        }
+                      />
+                    ) : (
+                      <span className="line-clamp-2">{line.description}</span>
+                    )}
                   </span>
                 </DataTable.Cell>
                 <DataTable.Cell
@@ -189,5 +203,46 @@ export function ReportTable({
         </DataTable.Body>
       </DataTable>
     </div>
+  )
+}
+
+function EditableDescription({
+  value,
+  onSave,
+}: {
+  value: string
+  onSave: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => setDraft(value), [value])
+
+  function save() {
+    const next = draft.trim()
+    if (!next) {
+      setDraft(value)
+      return
+    }
+    if (next !== value) onSave(next)
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      maxLength={1000}
+      aria-label="BOQ description"
+      title="Edit description"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+      className="min-w-[16rem] w-full border-b border-transparent bg-transparent px-1 text-[12px] text-ink outline-none hover:border-steel-border focus:border-signal"
+    />
   )
 }

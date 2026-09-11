@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   PRIMS,
   PRIM_LABEL,
@@ -17,7 +18,19 @@ import {
   type TakeoffLine,
   type TakeoffPrim,
 } from '../../../lib/boqTakeoff/measurement'
+import {
+  syntheticTakeoffMeasureInstance,
+  takeoffItemTypeForKind,
+  takeoffLineFromCapture,
+} from '../../../lib/boqTakeoff/fromPdfMeasure'
 import type { BoqTakeoffLinkTarget, BoqTakeoffSharedBy } from '../../../types/selectedBoq'
+import { fetchSheets } from '../../../api/sheets'
+import { createTakeoffItem } from '../../../api/takeoffItems'
+import { sheetIsCalibrated } from '../../../lib/sheetCalibration'
+import {
+  FieldMeasureButton,
+  MeasureSessionModal,
+} from '../../MeasureSessionModal'
 import { GhostButton, PrimaryButton } from '../../ui'
 import { DupIcon, IconBtn, LinkIcon, NumInput, PlusIcon, TrashIcon, fmtNum } from './TakeoffBits'
 
@@ -28,13 +41,16 @@ export function TakeoffSheet({
   description,
   unit,
   elementKey,
+  projectId,
+  floorId,
   initialLines,
   initialWaste = 0,
   measurementSetId,
   sharedBy,
   linkTargets,
-  pdfMeasurements,
+  pdfMeasurements = [],
   onApply,
+  onDescriptionChange,
   onOpenSchedule,
 }: {
   open: boolean
@@ -43,12 +59,14 @@ export function TakeoffSheet({
   description: string
   unit: string
   elementKey?: string
+  projectId?: string
+  floorId?: string
   initialLines: TakeoffLine[]
   initialWaste?: number
   measurementSetId: string | null
   sharedBy: BoqTakeoffSharedBy[]
   linkTargets: BoqTakeoffLinkTarget[]
-  pdfMeasurements: Array<{
+  pdfMeasurements?: Array<{
     id: string
     sheetId: string
     sheetName: string
@@ -63,6 +81,7 @@ export function TakeoffSheet({
     lines: TakeoffLine[]
     measurementSetId: string | null
   }) => void
+  onDescriptionChange?: (description: string) => void
   onOpenSchedule?: () => void
 }) {
   const prim = autoPrim(unit)
@@ -71,6 +90,29 @@ export function TakeoffSheet({
   const [activeSetId, setActiveSetId] = useState<string | null>(measurementSetId)
   const [showLink, setShowLink] = useState(false)
   const [showPdfMeasures, setShowPdfMeasures] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState(description)
+  const [measureLineId, setMeasureLineId] = useState<string | null>(null)
+  const measureOpen = measureLineId !== null
+
+  const sheetsQuery = useQuery({
+    queryKey: ['projects', projectId, 'sheets', floorId],
+    queryFn: () => fetchSheets(projectId!, floorId!),
+    enabled: open && Boolean(projectId && floorId),
+  })
+  const sheets = sheetsQuery.data ?? []
+  const measureDisabled =
+    !projectId || !floorId
+      ? 'Open takeoff from a floor with a drawing'
+      : sheets.length === 0
+        ? 'Upload the floor drawing first'
+        : sheets.some(sheetIsCalibrated)
+          ? null
+          : 'Calibrate the drawing first'
+  const measureTarget = syntheticTakeoffMeasureInstance({
+    floorId: floorId || '',
+    mark: itemRef || 'TAKEOFF',
+    prim,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -78,12 +120,22 @@ export function TakeoffSheet({
     setActiveSetId(measurementSetId)
     setShowLink(false)
     setShowPdfMeasures(false)
+    setMeasureLineId(null)
+    setDescriptionDraft(description)
     const seeded =
       initialLines.length > 0
         ? initialLines.map((l) => ({ ...l, dims: { ...(l.dims || {}) } }))
         : starterLines(elementKey)
     setLines(seeded)
-  }, [open, itemRef, initialWaste, measurementSetId, initialLines, elementKey])
+  }, [
+    open,
+    itemRef,
+    description,
+    initialWaste,
+    measurementSetId,
+    initialLines,
+    elementKey,
+  ])
 
   useEffect(() => {
     if (!open) return
@@ -148,6 +200,57 @@ export function TakeoffSheet({
     setShowPdfMeasures(false)
   }
 
+  const applyPdfCapture = async (capture: {
+    kind: string
+    value: number
+    points: { x: number; y: number }[]
+    sheetId: string
+    label: string
+  }) => {
+    let takeoffItemId: string | undefined
+    const type = takeoffItemTypeForKind(capture.kind)
+    const pointsOk =
+      type === 'COUNT'
+        ? capture.points.length > 0
+        : type === 'LINEAR'
+          ? capture.points.length >= 2
+          : capture.points.length >= 3
+    if (pointsOk) {
+      try {
+        const item = await createTakeoffItem(capture.sheetId, {
+          type,
+          points: capture.points,
+          color: type === 'AREA' ? '#22c55e' : type === 'COUNT' ? '#e29a12' : '#3b82f6',
+          label: capture.label || itemRef,
+        })
+        takeoffItemId = item.id
+      } catch {
+        /* keep the takeoff line even if the drawing item could not be stored */
+      }
+    }
+    const existingId =
+      measureLineId && measureLineId !== '__new__' ? measureLineId : undefined
+    const nextLine = {
+      ...takeoffLineFromCapture(capture, unit, existingId),
+      pdfTakeoffItemId: takeoffItemId,
+    }
+    setLines((current) => {
+      if (existingId && current.some((row) => row.id === existingId)) {
+        return current.map((row) => (row.id === existingId ? { ...nextLine, id: row.id } : row))
+      }
+      const starter = current[0]
+      const withoutBlankStarter =
+        current.length === 1 &&
+        !starter.pdfTakeoffItemId &&
+        !String(starter.label || '').trim() &&
+        !Object.values(starter.dims || {}).some(Boolean)
+          ? []
+          : current
+      return [...withoutBlankStarter, nextLine]
+    })
+    setMeasureLineId(null)
+  }
+
   const unlink = () => {
     setLines((p) =>
       p.map((l) => ({ ...l, id: newTakeoffLineId(), dims: { ...(l.dims || {}) } })),
@@ -185,9 +288,27 @@ export function TakeoffSheet({
               </span>
             ) : null}
           </div>
-          {description ? (
-            <p className="mt-1 line-clamp-2 text-[11px] text-steel">{description}</p>
-          ) : null}
+          <input
+            type="text"
+            value={descriptionDraft}
+            maxLength={1000}
+            aria-label="Takeoff item description"
+            title="Edit description"
+            onChange={(event) => setDescriptionDraft(event.target.value)}
+            onBlur={() => {
+              const next = descriptionDraft.trim()
+              if (!next) setDescriptionDraft(description)
+              else if (next !== description) onDescriptionChange?.(next)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+              if (event.key === 'Escape') {
+                setDescriptionDraft(description)
+                event.currentTarget.blur()
+              }
+            }}
+            className="mt-1 w-full border-b border-transparent bg-transparent text-[11px] text-steel outline-none hover:border-steel-border focus:border-signal focus:text-ink"
+          />
         </div>
         <button
           type="button"
@@ -263,6 +384,11 @@ export function TakeoffSheet({
           >
             PDF measure ({pdfMeasurements.length})
           </button>
+          <FieldMeasureButton
+            disabledReason={measureDisabled}
+            label="PDF"
+            onClick={() => setMeasureLineId('__new__')}
+          />
           {showPdfMeasures ? (
             <div className="absolute left-40 top-10 z-20 max-h-72 w-[28rem] overflow-auto border border-steel-border bg-panel p-1 shadow-xl">
               {pdfMeasurements.map((measurement) => {
@@ -341,13 +467,20 @@ export function TakeoffSheet({
               return (
                 <tr key={line.id} className="group align-top">
                   <td className="border-t border-steel-border/50 px-1 py-1">
-                    <input
-                      type="text"
-                      value={line.label || ''}
-                      onChange={(e) => updateLine(line.id, { label: e.target.value })}
-                      placeholder="e.g. Wall W1, grid A–C"
-                      className="w-40 rounded border border-transparent bg-transparent px-2 py-1 text-ink placeholder:text-steel/40 hover:border-steel-border focus:border-signal focus:bg-bg focus:outline-none"
-                    />
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={line.label || ''}
+                        onChange={(e) => updateLine(line.id, { label: e.target.value })}
+                        placeholder="e.g. Wall W1, grid A–C"
+                        className="w-40 rounded border border-transparent bg-transparent px-2 py-1 text-ink placeholder:text-steel/40 hover:border-steel-border focus:border-signal focus:bg-bg focus:outline-none"
+                      />
+                      <FieldMeasureButton
+                        disabledReason={measureDisabled}
+                        label="line"
+                        onClick={() => setMeasureLineId(line.id)}
+                      />
+                    </div>
                   </td>
                   <td className="border-t border-steel-border/50 px-1 py-1">
                     <select
@@ -558,6 +691,20 @@ export function TakeoffSheet({
           </div>
         </div>
       </div>
+      {measureOpen && projectId && floorId ? (
+        <MeasureSessionModal
+          open
+          projectId={projectId}
+          floorId={floorId}
+          instance={measureTarget.instance}
+          fieldKey={measureTarget.fieldKey}
+          onClose={() => setMeasureLineId(null)}
+          onApply={() => undefined}
+          onTakeoffCapture={(event) => {
+            void applyPdfCapture(event)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

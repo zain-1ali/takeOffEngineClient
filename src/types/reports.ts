@@ -17,6 +17,7 @@ export type ReportLine = {
   formulaText?: string
   applicableLevels?: string[]
   selectedBoqId?: string
+  manualBoqId?: string
   lineKey?: string
   suggestedQty?: number
   takeoffKind?: '' | 'dim' | 'bbs'

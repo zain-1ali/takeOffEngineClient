@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createPackResource,
   listPackAnalyses,
   listPackResources,
+  patchPackAnalysis,
   patchPackResource,
   recalculatePackAnalyses,
 } from '../../api/projectsApi'
@@ -53,14 +54,38 @@ export function PackRatesView({
   })
 
   const patchRes = useMutation({
-    mutationFn: (args: { id: string; unitRate?: number; wastePct?: number }) =>
+    mutationFn: (args: {
+      id: string
+      description?: string
+      unitRate?: number
+      wastePct?: number
+    }) =>
       patchPackResource(project.id, args.id, {
+        description: args.description,
         unitRate: args.unitRate,
         wastePct: args.wastePct,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['pack-resources', project.id] })
       void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+    },
+  })
+
+  const patchDescription = useMutation({
+    mutationFn: (args: {
+      lineKey: string
+      revision: number
+      description: string
+    }) =>
+      patchPackAnalysis(project.id, args.lineKey, {
+        revision: args.revision,
+        description: args.description,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
     },
   })
 
@@ -242,7 +267,13 @@ export function PackRatesView({
                   <DataTable.Cell className="font-mono text-[11px]">{r.code}</DataTable.Cell>
                   <DataTable.Cell className="text-steel">{databankCategoryLabel(r.category)}</DataTable.Cell>
                   <DataTable.Cell>
-                    {r.description}
+                    <EditableDescription
+                      value={r.description}
+                      label={`Description for ${r.code}`}
+                      onSave={(description) =>
+                        patchRes.mutate({ id: r.id, description })
+                      }
+                    />
                     {r.staleAnalysisCount > 0 ? (
                       <span className="ml-1 text-[10px] text-chalk">stale {r.staleAnalysisCount}</span>
                     ) : null}
@@ -305,7 +336,19 @@ export function PackRatesView({
                       {a.lineKey}
                     </button>
                   </DataTable.Cell>
-                  <DataTable.Cell className="line-clamp-2">{a.description}</DataTable.Cell>
+                  <DataTable.Cell>
+                    <EditableDescription
+                      value={a.description}
+                      label={`Description for ${a.lineKey}`}
+                      onSave={(description) =>
+                        patchDescription.mutate({
+                          lineKey: a.lineKey,
+                          revision: a.revision,
+                          description,
+                        })
+                      }
+                    />
+                  </DataTable.Cell>
                   <DataTable.Cell className="text-[11px] uppercase text-steel">
                     {a.status}
                   </DataTable.Cell>
@@ -337,5 +380,47 @@ export function PackRatesView({
         />
       )}
     </div>
+  )
+}
+
+function EditableDescription({
+  value,
+  label,
+  onSave,
+}: {
+  value: string
+  label: string
+  onSave: (description: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  function save() {
+    const next = draft.trim()
+    if (!next) {
+      setDraft(value)
+      return
+    }
+    if (next !== value) onSave(next)
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      maxLength={1000}
+      aria-label={label}
+      title="Edit description"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+      className="w-full min-w-[14rem] border-b border-transparent bg-transparent text-[12px] text-ink outline-none hover:border-steel-border focus:border-signal"
+    />
   )
 }

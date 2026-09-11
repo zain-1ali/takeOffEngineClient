@@ -373,6 +373,7 @@ export function patchPackAnalysis(
     packId?: string
     revision: number
     apply?: boolean
+    description?: string
     lines?: Array<{ sourceCode: string; quantity: number; remarks?: string }>
     allowances?: {
       transportPctMaterials?: number
@@ -513,6 +514,20 @@ export function createManualBoqItem(projectId: string, body: ManualBoqInput) {
   })
 }
 
+export function updateManualBoqItem(
+  projectId: string,
+  itemId: string,
+  body: Partial<ManualBoqInput>,
+) {
+  return api<{ item: ManualBoqItem }>(
+    `/api/projects/${projectId}/manual-boq/${itemId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
 export function deleteManualBoqItem(projectId: string, itemId: string) {
   return api<{ ok: boolean }>(
     `/api/projects/${projectId}/manual-boq/${itemId}`,
@@ -587,7 +602,7 @@ export function deleteSelectedBoqItem(projectId: string, itemId: string) {
 export function updateSelectedBoqItem(
   projectId: string,
   itemId: string,
-  body: { quantity: number },
+  body: { quantity?: number; description?: string },
 ) {
   return api<{ item: SelectedBoqItem }>(
     `/api/projects/${projectId}/selected-boq/${itemId}`,

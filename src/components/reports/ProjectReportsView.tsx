@@ -1,6 +1,11 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getBoqPack, getReports } from '../../api/projectsApi'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  getBoqPack,
+  getReports,
+  updateManualBoqItem,
+  updateSelectedBoqItem,
+} from '../../api/projectsApi'
 import type { ReportLine } from '../../types/reports'
 import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import {
@@ -36,6 +41,7 @@ export function ProjectReportsView({
   /** Leave the export / reports surface (e.g. back to modelling). */
   onDone?: () => void
 }) {
+  const qc = useQueryClient()
   const [scope, setScope] = useState<Scope>('floor')
   const [sub, setSub] = useState<ReportSubTab>('boq')
   const [panel, setPanel] = useState<Panel>('reports')
@@ -65,6 +71,37 @@ export function ProjectReportsView({
         scope,
         floorId: scope === 'floor' ? floorId : undefined,
       }),
+  })
+
+  const descriptionMut = useMutation({
+    mutationFn: ({
+      id,
+      description,
+    }: {
+      id: string
+      description: string
+    }) => updateSelectedBoqItem(project.id, id, { description }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+    },
+  })
+
+  const manualDescriptionMut = useMutation({
+    mutationFn: ({
+      id,
+      description,
+    }: {
+      id: string
+      description: string
+    }) => updateManualBoqItem(project.id, id, { description }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+    },
   })
 
   const data = query.data
@@ -316,11 +353,25 @@ export function ProjectReportsView({
                   emptyMessage="No BOQ items for this scope yet. Click Qty to open the takeoff sheet."
                   onQtyClick={setQtyLine}
                   onRateClick={setAnalysisLine}
+                  onDescriptionChange={(line, description) => {
+                    if (line.selectedBoqId) {
+                      descriptionMut.mutate({
+                        id: line.selectedBoqId,
+                        description,
+                      })
+                    } else if (line.manualBoqId) {
+                      manualDescriptionMut.mutate({
+                        id: line.manualBoqId,
+                        description,
+                      })
+                    }
+                  }}
                 />
                 <BoqTakeoffDialog
                   open={Boolean(qtyLine)}
                   line={qtyLine}
                   projectId={project.id}
+                  floorId={floorId}
                   onClose={() => setQtyLine(null)}
                   onOpenSchedule={() => {
                     setQtyLine(null)

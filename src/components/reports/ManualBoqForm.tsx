@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createManualBoqItem,
   deleteManualBoqItem,
   listManualBoqItems,
+  updateManualBoqItem,
 } from '../../api/projectsApi'
 import {
   formatUniformatOption,
@@ -161,6 +162,17 @@ export function ManualBoqForm({
     onError: (err) => {
       setError(err instanceof Error ? err.message : 'Could not create item')
     },
+  })
+
+  const descriptionMut = useMutation({
+    mutationFn: ({
+      id,
+      description,
+    }: {
+      id: string
+      description: string
+    }) => updateManualBoqItem(project.id, id, { description }),
+    onSuccess: invalidateReports,
   })
 
   const delMut = useMutation({
@@ -392,7 +404,15 @@ export function ManualBoqForm({
                     <span className="text-[10px] uppercase tracking-wide text-signal mr-1.5">
                       Manual
                     </span>
-                    {it.description}
+                    <EditableManualDescription
+                      value={it.description}
+                      onSave={(next) =>
+                        descriptionMut.mutate({
+                          id: it.id,
+                          description: next,
+                        })
+                      }
+                    />
                     {it.floorId ? (
                       <span className="text-steel ml-1">· {it.floorId}</span>
                     ) : (
@@ -440,5 +460,45 @@ export function ManualBoqForm({
         </div>
       )}
     </div>
+  )
+}
+
+function EditableManualDescription({
+  value,
+  onSave,
+}: {
+  value: string
+  onSave: (description: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  function save() {
+    const next = draft.trim()
+    if (!next) {
+      setDraft(value)
+      return
+    }
+    if (next !== value) onSave(next)
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      maxLength={1000}
+      aria-label="Manual BOQ description"
+      title="Edit description"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+      className="inline-block min-w-[14rem] border-b border-transparent bg-transparent text-ink outline-none hover:border-steel-border focus:border-signal"
+    />
   )
 }

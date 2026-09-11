@@ -208,6 +208,7 @@ export function BbsTakeoffSheet({
   initialBars,
   initialWaste = 0,
   onApply,
+  onDescriptionChange,
 }: {
   open: boolean
   onClose: () => void
@@ -218,19 +219,22 @@ export function BbsTakeoffSheet({
   initialBars: BbsBar[]
   initialWaste?: number
   onApply: (payload: { wastePct: number; bars: BbsBar[] }) => void
+  onDescriptionChange?: (description: string) => void
 }) {
   const [bars, setBars] = useState<BbsBar[]>([])
   const [wastePct, setWastePct] = useState(String(initialWaste ?? 0))
+  const [descriptionDraft, setDescriptionDraft] = useState(description)
 
   useEffect(() => {
     if (!open) return
     setWastePct(String(initialWaste ?? 0))
+    setDescriptionDraft(description)
     setBars(
       initialBars.length
         ? initialBars.map((b) => emptyBar({ ...b, dims: { ...(b.dims || {}) } }))
         : starterBars(elementKey),
     )
-  }, [open, itemRef, initialBars, initialWaste, elementKey])
+  }, [open, itemRef, description, initialBars, initialWaste, elementKey])
 
   useEffect(() => {
     if (!open) return
@@ -300,9 +304,27 @@ export function BbsTakeoffSheet({
               {unit}
             </span>
           </div>
-          {description ? (
-            <p className="mt-1 line-clamp-2 text-[11px] text-steel">{description}</p>
-          ) : null}
+          <input
+            type="text"
+            value={descriptionDraft}
+            maxLength={1000}
+            aria-label="BBS item description"
+            title="Edit description"
+            onChange={(event) => setDescriptionDraft(event.target.value)}
+            onBlur={() => {
+              const next = descriptionDraft.trim()
+              if (!next) setDescriptionDraft(description)
+              else if (next !== description) onDescriptionChange?.(next)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+              if (event.key === 'Escape') {
+                setDescriptionDraft(description)
+                event.currentTarget.blur()
+              }
+            }}
+            className="mt-1 w-full border-b border-transparent bg-transparent text-[11px] text-steel outline-none hover:border-steel-border focus:border-signal focus:text-ink"
+          />
         </div>
         <button
           type="button"

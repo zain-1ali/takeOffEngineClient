@@ -9,6 +9,7 @@ import { FloorsModal } from '../components/modals/FloorsModal'
 import { GridModal } from '../components/modals/GridModal'
 import { ProjectModal } from '../components/modals/ProjectModal'
 import { FloorDrawingBar } from '../components/FloorDrawingBar'
+import { CatalogueSchedulePanel } from '../components/schedule/CatalogueSchedulePanel'
 import { ScheduleTab } from '../components/schedule/ScheduleTab'
 import { ModelTab } from '../components/model/ModelTab'
 import { ElementReportsTab } from '../components/reports/ElementReportsTab'
@@ -76,12 +77,11 @@ export default function WorkspacePage() {
     [elementKey, elementTree],
   )
   const catalogueOnly = Boolean(element?.catalogueOnly)
+  const has3D = Boolean(ELEMENT_ENGINES[elementKey])
 
   useEffect(() => {
-    if (catalogueOnly && (tab === 'schedule' || tab === 'model')) {
-      setTab('boq')
-    }
-  }, [catalogueOnly, tab])
+    if (!has3D && tab === 'model') setTab('schedule')
+  }, [has3D, tab])
 
   /** Floors that already host this element (for dropdown exception rule). */
   const elementFloorsQuery = useQuery({
@@ -269,20 +269,14 @@ export default function WorkspacePage() {
             <div className="flex gap-0.5 px-6 mt-3 border-b border-steel-border flex-shrink-0">
               {(
                 (
-                  catalogueOnly
-                    ? ([
-                        ['boq', 'BOQ'],
-                        ['bom', 'BOM'],
-                        ['labour', 'Labour'],
-                      ] as const)
-                    : ([
-                        ['schedule', 'Schedule'],
-                        ['model', '3D Model'],
-                        ['boq', 'BOQ'],
-                        ['bom', 'BOM'],
-                        ['labour', 'Labour'],
-                      ] as const)
-                )
+                  [
+                    ['schedule', 'Schedule'],
+                    ['model', '3D Model'],
+                    ['boq', 'BOQ'],
+                    ['bom', 'BOM'],
+                    ['labour', 'Labour'],
+                  ] as const
+                ).filter(([id]) => id !== 'model' || has3D)
               ).map(([id, label]) => (
                 <button
                   key={id}
@@ -351,28 +345,26 @@ export default function WorkspacePage() {
                   </div>
                 )}
                 {tab === 'schedule' && !ELEMENT_ENGINES[elementKey] && (
-                  <div className="p-8 text-sm text-steel">
-                    {element?.label || elementKey} is planned but not implemented yet.
-                  </div>
+                  <CatalogueSchedulePanel
+                    projectId={projectId}
+                    floorId={currentFloorId}
+                    elementLabel={element?.label || elementKey}
+                    onOpenBoq={() => setTab('boq')}
+                  />
                 )}
-                {tab === 'model' && ELEMENT_ENGINES[elementKey] && floorOptions.length > 0 && (
+                {tab === 'model' && has3D && floorOptions.length > 0 && (
                   <ModelTab
                     project={project}
                     floorId={currentFloorId}
                     elementKey={elementKey}
                   />
                 )}
-                {tab === 'model' && ELEMENT_ENGINES[elementKey] && floorOptions.length === 0 && (
+                {tab === 'model' && has3D && floorOptions.length === 0 && (
                   <div className="p-8 text-sm text-amber-200/90 max-w-lg">
                     {emptyCompatibleFloorsMessage({
                       elementLabel: element?.label || elementKey,
                       allowedLevelTypes: registerEntry?.allowedLevelTypes,
                     })}
-                  </div>
-                )}
-                {tab === 'model' && !ELEMENT_ENGINES[elementKey] && (
-                  <div className="p-8 text-sm text-steel">
-                    3D is not available for {element?.label || elementKey} yet.
                   </div>
                 )}
                 {(tab === 'boq' || tab === 'bom' || tab === 'labour') && (

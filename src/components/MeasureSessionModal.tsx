@@ -68,6 +68,15 @@ export type MeasureApplyPatch = {
   count?: number
 }
 
+/** Fired when a PDF trace is completed — used by BOQ takeoff, not schedule geometry. */
+export type TakeoffPdfCaptureEvent = {
+  kind: MeasureSessionOverlay['kind']
+  value: number
+  points: ImagePoint[]
+  sheetId: string
+  label: string
+}
+
 /** Interaction phase: navigate first, then measure. */
 type SessionPhase = 'pan' | 'measure' | 'calibrate'
 
@@ -256,6 +265,7 @@ export function MeasureSessionModal({
   instance,
   fieldKey,
   onApply,
+  onTakeoffCapture,
 }: {
   open: boolean
   onClose: () => void
@@ -265,6 +275,7 @@ export function MeasureSessionModal({
   /** `count` or a geometry key from the approved traceable list. */
   fieldKey: string
   onApply: (patch: MeasureApplyPatch) => void
+  onTakeoffCapture?: (event: TakeoffPdfCaptureEvent) => void
 }) {
   const qc = useQueryClient()
   const focus = useMemo(
@@ -545,6 +556,18 @@ export function MeasureSessionModal({
       areaParents: parents,
       deductionParentId: nextDeductionParentId ?? deductionParentId,
     })
+    if (onTakeoffCapture && sheet) {
+      const numeric = parseFloat(overlayArgs.valueLabel)
+      if (Number.isFinite(numeric)) {
+        onTakeoffCapture({
+          kind: overlayArgs.kind,
+          value: numeric,
+          points: overlayArgs.points,
+          sheetId: sheet.id,
+          label: overlayArgs.name || overlayArgs.valueLabel,
+        })
+      }
+    }
   }
 
   function registerAreaParentState(
@@ -1203,6 +1226,15 @@ export function MeasureSessionModal({
         areaParents,
         deductionParentId,
       })
+      if (onTakeoffCapture && sheet) {
+        onTakeoffCapture({
+          kind: 'COUNT',
+          value: n,
+          points: [],
+          sheetId: sheet.id,
+          label: `${n}`,
+        })
+      }
     }
     if (focus.target.kind === 'count') {
       setStatusMsg(`No. = ${n}`)
@@ -1251,7 +1283,7 @@ export function MeasureSessionModal({
     }`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-3">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/50 p-3">
       <div className="flex h-[min(92vh,900px)] w-[min(98vw,1280px)] flex-col border border-steel-border bg-panel shadow-xl">
         <header className="flex flex-shrink-0 items-center gap-3 border-b border-steel-border px-4 py-2.5">
           <div className="min-w-0 flex-1">

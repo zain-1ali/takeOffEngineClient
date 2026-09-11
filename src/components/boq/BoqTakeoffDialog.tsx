@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   applySelectedBoqTakeoff,
   getSelectedBoqTakeoff,
+  updateSelectedBoqItem,
 } from '../../api/projectsApi'
 import type { TakeoffLine } from '../../lib/boqTakeoff/measurement'
 import type { BbsBar } from '../../lib/boqTakeoff/bbs'
@@ -14,12 +15,14 @@ export function BoqTakeoffDialog({
   open,
   line,
   projectId,
+  floorId,
   onClose,
   onOpenSchedule,
 }: {
   open: boolean
   line: ReportLine | null
   projectId: string
+  floorId?: string
   onClose: () => void
   onOpenSchedule?: () => void
 }) {
@@ -51,10 +54,24 @@ export function BoqTakeoffDialog({
     },
   })
 
+  const descriptionMut = useMutation({
+    mutationFn: (description: string) =>
+      updateSelectedBoqItem(projectId, itemId, { description }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', projectId] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', projectId] })
+      void qc.invalidateQueries({ queryKey: ['boq-takeoff', projectId, itemId] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', projectId] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', projectId] })
+    },
+  })
+
   if (!open || !line) return null
 
   const takeoff = query.data?.takeoff
   const kind = takeoff?.kind || (line.unit === 't' || line.unit === 'kg' ? 'bbs' : 'dim')
+  const measureFloorId =
+    floorId && floorId !== '__PROJECT__' ? floorId : takeoff?.floorId || floorId
 
   return createPortal(
     <div
@@ -76,6 +93,9 @@ export function BoqTakeoffDialog({
             elementKey={takeoff.elementKey}
             initialBars={takeoff.bars}
             initialWaste={takeoff.wastePct}
+            onDescriptionChange={(description) =>
+              descriptionMut.mutate(description)
+            }
             onApply={({ wastePct, bars }) => mut.mutate({ kind: 'bbs', wastePct, bars })}
           />
         ) : (
@@ -86,12 +106,17 @@ export function BoqTakeoffDialog({
             description={takeoff.description}
             unit={takeoff.unit}
             elementKey={takeoff.elementKey}
+            projectId={projectId}
+            floorId={measureFloorId}
             initialLines={takeoff.lines}
             initialWaste={takeoff.wastePct}
             measurementSetId={takeoff.measurementSetId}
             sharedBy={takeoff.sharedBy}
             linkTargets={takeoff.linkTargets}
             pdfMeasurements={takeoff.pdfMeasurements}
+            onDescriptionChange={(description) =>
+              descriptionMut.mutate(description)
+            }
             onOpenSchedule={onOpenSchedule}
             onApply={({ wastePct, lines, measurementSetId }) =>
               mut.mutate({ kind: 'dim', wastePct, lines, measurementSetId })

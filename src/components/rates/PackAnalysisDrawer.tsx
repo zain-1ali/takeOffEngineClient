@@ -5,6 +5,7 @@ import {
   getPackAnalysis,
   listPackResources,
   patchPackAnalysis,
+  patchPackResource,
 } from '../../api/projectsApi'
 import { formatMoney } from '../../lib/units'
 import { GhostButton, NumericInput, PrimaryButton } from '../ui'
@@ -46,6 +47,7 @@ export function PackAnalysisDrawer({
 }) {
   const qc = useQueryClient()
   const [draftLines, setDraftLines] = useState<DraftLine[] | null>(null)
+  const [descriptionDraft, setDescriptionDraft] = useState('')
   const [allowDraft, setAllowDraft] = useState({
     transportPctMaterials: 0,
     sundriesPctLabourPlantSubcontract: 0,
@@ -81,6 +83,7 @@ export function PackAnalysisDrawer({
         remarks: ln.remarks || '',
       })),
     )
+    setDescriptionDraft(detail.analysis.description)
     setAllowDraft({ ...detail.analysis.allowances })
   }, [detail?.analysis.id, detail?.analysis.revision])
 
@@ -114,6 +117,7 @@ export function PackAnalysisDrawer({
         packId: detail.packId,
         revision: detail.analysis.revision,
         apply: body.apply,
+        description: descriptionDraft.trim(),
         lines,
         allowances: allowDraft,
       })
@@ -152,6 +156,19 @@ export function PackAnalysisDrawer({
       setNewUnit('nr')
       setNewRate(0)
       setNewWaste(0)
+    },
+  })
+
+  const patchResourceDescription = useMutation({
+    mutationFn: (args: { id: string; description: string }) =>
+      patchPackResource(projectId, args.id, {
+        description: args.description,
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['pack-resources', projectId] })
+      await qc.invalidateQueries({
+        queryKey: ['pack-analysis', projectId, lineKey],
+      })
     },
   })
 
@@ -206,7 +223,19 @@ export function PackAnalysisDrawer({
               </div>
               <div className="grid grid-cols-[9rem_1fr] border-b border-steel-border">
                 <div className="px-2 py-1.5 text-steel bg-panel">BOQ Item</div>
-                <div className="px-2 py-1.5">{detail.analysis.description}</div>
+                <div className="px-2 py-1.5">
+                  <input
+                    type="text"
+                    value={descriptionDraft}
+                    maxLength={1000}
+                    aria-label="Rate analysis BOQ description"
+                    title="Edit description"
+                    onChange={(event) =>
+                      setDescriptionDraft(event.target.value)
+                    }
+                    className="w-full border-b border-transparent bg-transparent text-[12px] text-ink outline-none hover:border-steel-border focus:border-signal"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-[9rem_1fr_auto_1fr_auto_auto_auto_auto] gap-x-2 items-center">
                 <div className="px-2 py-1.5 text-steel bg-panel">Unit</div>
@@ -294,7 +323,22 @@ export function PackAnalysisDrawer({
                           </select>
                         </td>
                         <td className={`py-1 px-2 ${res ? '' : 'text-danger'}`}>
-                          {res?.description || (ln.sourceCode ? `${ln.sourceCode} (missing)` : '—')}
+                          {res ? (
+                            <ResourceDescriptionInput
+                              value={res.description}
+                              code={res.code}
+                              onSave={(description) =>
+                                patchResourceDescription.mutate({
+                                  id: res.id,
+                                  description,
+                                })
+                              }
+                            />
+                          ) : ln.sourceCode ? (
+                            `${ln.sourceCode} (missing)`
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="py-1 px-2 text-steel">
                           {res ? categoryLabel(res.category) : '—'}
@@ -502,14 +546,18 @@ export function PackAnalysisDrawer({
         <div className="px-4 py-3 border-t border-steel-border flex justify-end gap-2">
           <GhostButton
             className="!text-xs !py-1.5 !px-3"
-            disabled={mut.isPending}
+            disabled={mut.isPending || !descriptionDraft.trim()}
             onClick={() => mut.mutate({ apply: false })}
           >
             {mut.isPending ? 'Saving…' : 'Save & recalculate'}
           </GhostButton>
           <PrimaryButton
             className="!text-xs !py-1.5 !px-3"
-            disabled={mut.isPending || detail.analysis.status === 'INVALID'}
+            disabled={
+              mut.isPending ||
+              !descriptionDraft.trim() ||
+              detail.analysis.status === 'INVALID'
+            }
             onClick={() => mut.mutate({ apply: true })}
           >
             Apply rate to BOQ
@@ -517,6 +565,48 @@ export function PackAnalysisDrawer({
         </div>
       )}
     </div>
+  )
+}
+
+function ResourceDescriptionInput({
+  value,
+  code,
+  onSave,
+}: {
+  value: string
+  code: string
+  onSave: (description: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+
+  function save() {
+    const next = draft.trim()
+    if (!next) {
+      setDraft(value)
+      return
+    }
+    if (next !== value) onSave(next)
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      maxLength={1000}
+      aria-label={`Description for ${code}`}
+      title="Edit resource description"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+      className="w-full min-w-[12rem] border-b border-transparent bg-transparent text-[11px] outline-none hover:border-steel-border focus:border-signal"
+    />
   )
 }
 

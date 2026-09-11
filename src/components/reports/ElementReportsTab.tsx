@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteSelectedBoqItem, getReports } from '../../api/projectsApi'
+import {
+  deleteSelectedBoqItem,
+  getReports,
+  updateSelectedBoqItem,
+} from '../../api/projectsApi'
 import { findElement } from '../../constants/elementTree'
 import { ELEMENT_ENGINES } from '../../elementEngines'
 import type { Project } from '../../types/api'
@@ -70,6 +74,22 @@ export function ElementReportsTab({
     },
   })
 
+  const descriptionMut = useMutation({
+    mutationFn: ({
+      id,
+      description,
+    }: {
+      id: string
+      description: string
+    }) => updateSelectedBoqItem(project.id, id, { description }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+    },
+  })
+
   if (!implemented) {
     return (
       <div className="p-4 text-sm text-steel">
@@ -130,6 +150,14 @@ export function ElementReportsTab({
               currency={currency}
               onQtyClick={setQtyLine}
               onRateClick={setAnalysisLine}
+              onDescriptionChange={(line, description) => {
+                if (line.selectedBoqId) {
+                  descriptionMut.mutate({
+                    id: line.selectedBoqId,
+                    description,
+                  })
+                }
+              }}
               onDeleteLine={(line) => {
                 if (!line.selectedBoqId) return
                 delMut.mutate(line.selectedBoqId)
@@ -205,6 +233,7 @@ export function ElementReportsTab({
         open={Boolean(qtyLine)}
         line={qtyLine}
         projectId={project.id}
+        floorId={floorId}
         onClose={() => setQtyLine(null)}
         onOpenSchedule={() => {
           setQtyLine(null)
