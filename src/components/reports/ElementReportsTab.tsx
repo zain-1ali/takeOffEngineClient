@@ -189,7 +189,7 @@ export function ElementReportsTab({
           {!hasBomItems ? (
             <p className="text-sm text-steel py-3">
               {catalogueOnly
-                ? 'Catalogue-only headings have no 3D BOM. Quantities are typed or measured on the BOQ.'
+                ? 'No materials yet. Enter a BOQ quantity and add Material / Plant resources on Rate Analysis — those databank lines become this BOM.'
                 : 'No materials yet. Take off concrete, formwork or rebar on the BOQ and those quantities will generate the BOM.'}
             </p>
           ) : (
@@ -214,7 +214,7 @@ export function ElementReportsTab({
           {!hasLabour ? (
             <p className="text-sm text-steel py-3">
               {catalogueOnly
-                ? 'Catalogue-only headings have no labour build-up from 3D engines.'
+                ? 'No labour yet. Enter a BOQ quantity and add Labour resources on Rate Analysis — those databank lines become this labour report.'
                 : 'No labour yet. Take off concrete, formwork or rebar on the BOQ and those quantities will generate labour.'}
             </p>
           ) : (

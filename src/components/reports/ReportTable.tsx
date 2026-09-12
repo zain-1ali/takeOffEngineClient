@@ -103,15 +103,15 @@ export function ReportTable({
                   {line.ref}
                 </DataTable.Cell>
                 <DataTable.Cell className="!py-1 text-[12px] leading-snug">
-                  <span className="inline-flex items-start gap-1 flex-wrap">
+                  <div className="flex items-start gap-1">
                     {line.source === 'MANUAL' && (
-                      <span className="text-[9px] uppercase tracking-wide text-signal border border-signal/40 px-0.5 leading-4">
+                      <span className="shrink-0 text-[9px] uppercase tracking-wide text-signal border border-signal/40 px-0.5 leading-4">
                         Manual
                       </span>
                     )}
                     {line.source === 'CATALOGUE' && Number(line.qty) === 0 && (
                       <span
-                        className="text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
+                        className="shrink-0 text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
                         title="Click Qty to open the takeoff sheet"
                       >
                         No qty
@@ -126,9 +126,11 @@ export function ReportTable({
                         }
                       />
                     ) : (
-                      <span className="line-clamp-2">{line.description}</span>
+                      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                        {line.description}
+                      </span>
                     )}
-                  </span>
+                  </div>
                 </DataTable.Cell>
                 <DataTable.Cell
                   numeric
@@ -140,17 +142,24 @@ export function ReportTable({
                       className="w-full text-right underline decoration-dotted underline-offset-2 hover:text-signal"
                       title={
                         line.unit === 't' || line.unit === 'kg'
-                          ? 'Open bar bending schedule'
-                          : 'Open takeoff sheet'
+                          ? 'Open bar bending schedule / PDF measure'
+                          : line.takeoffLinked
+                            ? 'Open linked takeoff / PDF measure'
+                            : 'Open takeoff sheet / PDF measure'
                       }
                       onClick={() => onQtyClick(line)}
                     >
                       <span className="inline-flex items-baseline justify-end gap-1">
-                        {line.takeoffLinked ? (
-                          <span className="text-[10px] text-chalk" title="Linked measurements">
-                            ↗
-                          </span>
-                        ) : null}
+                        <span
+                          className="text-[10px] text-signal no-underline"
+                          title={
+                            line.takeoffLinked
+                              ? 'Takeoff linked to PDF measure'
+                              : 'Open takeoff'
+                          }
+                        >
+                          {line.takeoffLinked ? '↗ PDF' : 'takeoff'}
+                        </span>
                         {fmtQty(line.qty, line)}
                         {line.takeoffLineCount ? (
                           <span className="text-[10px] text-steel no-underline">
@@ -226,23 +235,24 @@ function EditableDescription({
     if (next !== value) onSave(next)
   }
 
+  const rows = Math.min(8, Math.max(2, draft.split('\n').length + Math.floor(draft.length / 70)))
+
   return (
-    <input
-      type="text"
+    <textarea
       value={draft}
-      maxLength={1000}
+      maxLength={4000}
+      rows={rows}
       aria-label="BOQ description"
-      title="Edit description"
+      title="Edit description — full text is shown and saved on blur"
       onChange={(event) => setDraft(event.target.value)}
       onBlur={save}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
           setDraft(value)
           event.currentTarget.blur()
         }
       }}
-      className="min-w-[16rem] w-full border-b border-transparent bg-transparent px-1 text-[12px] text-ink outline-none hover:border-steel-border focus:border-signal"
+      className="min-w-[16rem] w-full resize-y whitespace-pre-wrap break-words border-b border-transparent bg-transparent px-1 text-[12px] leading-snug text-ink outline-none hover:border-steel-border focus:border-signal"
     />
   )
 }

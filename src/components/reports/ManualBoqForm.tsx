@@ -482,23 +482,24 @@ function EditableManualDescription({
     if (next !== value) onSave(next)
   }
 
+  const rows = Math.min(6, Math.max(2, draft.split('\n').length + Math.floor(draft.length / 60)))
+
   return (
-    <input
-      type="text"
+    <textarea
       value={draft}
-      maxLength={1000}
+      maxLength={4000}
+      rows={rows}
       aria-label="Manual BOQ description"
-      title="Edit description"
+      title="Edit description — full text is shown"
       onChange={(event) => setDraft(event.target.value)}
       onBlur={save}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
           setDraft(value)
           event.currentTarget.blur()
         }
       }}
-      className="inline-block min-w-[14rem] border-b border-transparent bg-transparent text-ink outline-none hover:border-steel-border focus:border-signal"
+      className="w-full min-w-[14rem] resize-y whitespace-pre-wrap break-words border-b border-transparent bg-transparent text-ink outline-none hover:border-steel-border focus:border-signal"
     />
   )
 }

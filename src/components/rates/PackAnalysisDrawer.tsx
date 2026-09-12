@@ -224,16 +224,16 @@ export function PackAnalysisDrawer({
               <div className="grid grid-cols-[9rem_1fr] border-b border-steel-border">
                 <div className="px-2 py-1.5 text-steel bg-panel">BOQ Item</div>
                 <div className="px-2 py-1.5">
-                  <input
-                    type="text"
+                  <textarea
                     value={descriptionDraft}
-                    maxLength={1000}
+                    maxLength={4000}
+                    rows={Math.min(6, Math.max(2, descriptionDraft.split('\n').length + Math.floor(descriptionDraft.length / 70)))}
                     aria-label="Rate analysis BOQ description"
-                    title="Edit description"
+                    title="Edit description — full text is shown"
                     onChange={(event) =>
                       setDescriptionDraft(event.target.value)
                     }
-                    className="w-full border-b border-transparent bg-transparent text-[12px] text-ink outline-none hover:border-steel-border focus:border-signal"
+                    className="w-full resize-y whitespace-pre-wrap break-words border-b border-transparent bg-transparent text-[12px] leading-snug text-ink outline-none hover:border-steel-border focus:border-signal"
                   />
                 </div>
               </div>
@@ -589,23 +589,24 @@ function ResourceDescriptionInput({
     if (next !== value) onSave(next)
   }
 
+  const rows = Math.min(5, Math.max(2, draft.split('\n').length + Math.floor(draft.length / 50)))
+
   return (
-    <input
-      type="text"
+    <textarea
       value={draft}
-      maxLength={1000}
+      maxLength={4000}
+      rows={rows}
       aria-label={`Description for ${code}`}
-      title="Edit resource description"
+      title="Edit resource description — full text is shown"
       onChange={(event) => setDraft(event.target.value)}
       onBlur={save}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
           setDraft(value)
           event.currentTarget.blur()
         }
       }}
-      className="w-full min-w-[12rem] border-b border-transparent bg-transparent text-[11px] outline-none hover:border-steel-border focus:border-signal"
+      className="w-full min-w-[12rem] resize-y whitespace-pre-wrap break-words border-b border-transparent bg-transparent text-[11px] leading-snug outline-none hover:border-steel-border focus:border-signal"
     />
   )
 }

@@ -288,12 +288,12 @@ export function TakeoffSheet({
               </span>
             ) : null}
           </div>
-          <input
-            type="text"
+          <textarea
             value={descriptionDraft}
-            maxLength={1000}
+            maxLength={4000}
+            rows={Math.min(6, Math.max(2, descriptionDraft.split('\n').length + Math.floor(descriptionDraft.length / 80)))}
             aria-label="Takeoff item description"
-            title="Edit description"
+            title="Edit description — full text is shown"
             onChange={(event) => setDescriptionDraft(event.target.value)}
             onBlur={() => {
               const next = descriptionDraft.trim()
@@ -301,13 +301,12 @@ export function TakeoffSheet({
               else if (next !== description) onDescriptionChange?.(next)
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') event.currentTarget.blur()
               if (event.key === 'Escape') {
                 setDescriptionDraft(description)
                 event.currentTarget.blur()
               }
             }}
-            className="mt-1 w-full border-b border-transparent bg-transparent text-[11px] text-steel outline-none hover:border-steel-border focus:border-signal focus:text-ink"
+            className="mt-1 w-full resize-y whitespace-pre-wrap break-words border-b border-transparent bg-transparent text-[11px] leading-snug text-steel outline-none hover:border-steel-border focus:border-signal focus:text-ink"
           />
         </div>
         <button
