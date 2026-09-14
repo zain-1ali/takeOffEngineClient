@@ -81,7 +81,7 @@ export function ElementTree({
             </button>
             {mod.elements.map((el) => {
                 const active = el.key === selectedKey
-                const count = counts[el.key] || 0
+                const count = counts[el.engineKey || el.key] || 0
                 const num = elementDisplayNum(el)
 
                 if (!el.implemented) {

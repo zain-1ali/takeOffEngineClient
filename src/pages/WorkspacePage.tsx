@@ -17,8 +17,12 @@ import { ProjectReportsView } from '../components/reports/ProjectReportsView'
 import { ElementRegisterView } from '../components/register/ElementRegisterView'
 import { DrawingsRegisterView } from '../components/drawings/DrawingsRegisterView'
 import { ELEMENT_ENGINES } from '../elementEngines'
-import { findElement, type FlowStepId } from '../constants/elementTree'
-import type { ElementDef } from '../constants/elementTree'
+import {
+  findElement,
+  instanceKeyForElement,
+  type ElementDef,
+  type FlowStepId,
+} from '../constants/elementTree'
 import { findRegisterEntry } from '../constants/elementRegister'
 import { mergePackIntoElementTree } from '../lib/mergePackElementTree'
 import {
@@ -68,16 +72,27 @@ export default function WorkspacePage() {
     [packQuery.data],
   )
 
-  const registerEntry = useMemo(
-    () => findRegisterEntry(elementKey),
-    [elementKey],
-  )
   const element = useMemo(
     () => findElement(elementKey, elementTree),
     [elementKey, elementTree],
   )
+  const reportKey = elementKey
+  const instanceKey = instanceKeyForElement(element, elementKey)
+  const registerEntry = useMemo(
+    () => findRegisterEntry(instanceKey),
+    [instanceKey],
+  )
   const catalogueOnly = Boolean(element?.catalogueOnly)
-  const has3D = Boolean(ELEMENT_ENGINES[elementKey])
+  const has3D = Boolean(ELEMENT_ENGINES[instanceKey])
+
+  useEffect(() => {
+    if (!elementTree.length) return
+    if (findElement(elementKey, elementTree)) return
+    const first = elementTree
+      .flatMap((m) => m.elements)
+      .find((e) => e.implemented)
+    if (first) setElementKey(first.key)
+  }, [elementTree, elementKey])
 
   useEffect(() => {
     if (!has3D && tab === 'model') setTab('schedule')
@@ -85,12 +100,14 @@ export default function WorkspacePage() {
 
   /** Floors that already host this element (for dropdown exception rule). */
   const elementFloorsQuery = useQuery({
-    queryKey: ['element-floor-ids', projectId, elementKey],
+    queryKey: ['element-floor-ids', projectId, instanceKey],
     queryFn: async () => {
-      const { instances } = await listInstances(projectId, { elementKey })
+      const { instances } = await listInstances(projectId, {
+        elementKey: instanceKey,
+      })
       return new Set(instances.map((i) => i.floorId))
     },
-    enabled: !!projectId && !!elementKey && !hideElementWorkspace,
+    enabled: !!projectId && !!instanceKey && !hideElementWorkspace,
   })
 
   const floorIdsWithElement = elementFloorsQuery.data ?? new Set<string>()
@@ -327,16 +344,16 @@ export default function WorkspacePage() {
               />
             ) : (
               <>
-                {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && floorOptions.length > 0 && (
+                {tab === 'schedule' && ELEMENT_ENGINES[instanceKey] && floorOptions.length > 0 && (
                   <ScheduleTab
                     project={project}
                     floors={floors}
                     floorId={currentFloorId}
-                    elementKey={elementKey}
+                    elementKey={instanceKey}
                     floorLevelException={floorIsExceptionOnly}
                   />
                 )}
-                {tab === 'schedule' && ELEMENT_ENGINES[elementKey] && floorOptions.length === 0 && (
+                {tab === 'schedule' && ELEMENT_ENGINES[instanceKey] && floorOptions.length === 0 && (
                   <div className="p-8 text-sm text-amber-200/90 max-w-lg">
                     {emptyCompatibleFloorsMessage({
                       elementLabel: element?.label || elementKey,
@@ -344,7 +361,7 @@ export default function WorkspacePage() {
                     })}
                   </div>
                 )}
-                {tab === 'schedule' && !ELEMENT_ENGINES[elementKey] && (
+                {tab === 'schedule' && !ELEMENT_ENGINES[instanceKey] && (
                   <CatalogueSchedulePanel
                     projectId={projectId}
                     floorId={currentFloorId}
@@ -356,7 +373,7 @@ export default function WorkspacePage() {
                   <ModelTab
                     project={project}
                     floorId={currentFloorId}
-                    elementKey={elementKey}
+                    elementKey={instanceKey}
                   />
                 )}
                 {tab === 'model' && has3D && floorOptions.length === 0 && (
@@ -371,7 +388,8 @@ export default function WorkspacePage() {
                   <ElementReportsTab
                     project={project}
                     floorId={currentFloorId}
-                    elementKey={elementKey}
+                    elementKey={reportKey}
+                    engineKey={element?.engineKey}
                     sub={tab}
                     onOpenSchedule={() => setTab('schedule')}
                     catalogueOnly={catalogueOnly}

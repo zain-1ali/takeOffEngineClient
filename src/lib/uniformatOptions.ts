@@ -1,5 +1,6 @@
 /** UniFormat II codes available for Manual BOQ → Cost Plan classification. */
 export const UNIFORMAT_CODE_OPTIONS: { code: string; title: string; group: string }[] = [
+  { code: 'P10', title: 'Preliminaries', group: 'P' },
   { code: 'A1010', title: 'Standard Foundations', group: 'A' },
   { code: 'A1020', title: 'Special Foundations', group: 'A' },
   { code: 'A1030', title: 'Slab on Grade', group: 'A' },
@@ -16,9 +17,12 @@ export const UNIFORMAT_CODE_OPTIONS: { code: string; title: string; group: strin
   { code: 'C3010', title: 'Wall Finishes', group: 'C' },
   { code: 'C3020', title: 'Floor Finishes', group: 'C' },
   { code: 'C3030', title: 'Ceiling Finishes', group: 'C' },
+  { code: 'D10', title: 'Conveying', group: 'D' },
   { code: 'D20', title: 'Plumbing', group: 'D' },
   { code: 'D30', title: 'HVAC', group: 'D' },
+  { code: 'D40', title: 'Fire Protection', group: 'D' },
   { code: 'D50', title: 'Electrical', group: 'D' },
+  { code: 'E10', title: 'Equipment and Furnishings', group: 'E' },
   { code: 'G20', title: 'Site Improvements', group: 'G' },
   { code: 'Z9990', title: 'Unclassified', group: 'Z' },
 ]

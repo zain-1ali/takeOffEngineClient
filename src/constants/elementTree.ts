@@ -19,6 +19,8 @@ export type ElementDef = {
   code?: string
   catalogueOnly?: boolean
   packScope?: 'PROJECT' | 'FLOOR'
+  /** 3D/schedule engine when this heading is linked (Roof Slab → SLABS). */
+  engineKey?: string
 }
 
 export type ElementModule = {
@@ -67,6 +69,15 @@ export function findElement(
     if (el) return el
   }
   return undefined
+}
+
+/** 3D / schedule / register key. Pack headings like Roof Slab keep a distinct report key. */
+export function instanceKeyForElement(
+  el: ElementDef | undefined,
+  fallback: string,
+): string {
+  const fromEl = (el?.engineKey || el?.key || '').trim()
+  return fromEl || fallback
 }
 
 export function elementDisplayNum(el: ElementDef): string {

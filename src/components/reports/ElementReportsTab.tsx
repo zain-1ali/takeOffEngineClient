@@ -22,6 +22,7 @@ export function ElementReportsTab({
   project,
   floorId,
   elementKey,
+  engineKey,
   sub,
   onOpenSchedule,
   catalogueOnly = false,
@@ -32,6 +33,7 @@ export function ElementReportsTab({
   project: Project
   floorId: string
   elementKey: string
+  engineKey?: string
   sub: ReportSubTab
   onOpenSchedule?: () => void
   catalogueOnly?: boolean
@@ -40,7 +42,8 @@ export function ElementReportsTab({
   elementNum?: number
 }) {
   const el = findElement(elementKey)
-  const implemented = !!ELEMENT_ENGINES[elementKey] || catalogueOnly
+  const instanceKey = (engineKey || elementKey).trim()
+  const implemented = !!ELEMENT_ENGINES[instanceKey] || catalogueOnly
   const projectScoped = catalogueOnly && packScope === 'PROJECT'
   const qc = useQueryClient()
   const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
@@ -98,7 +101,9 @@ export function ElementReportsTab({
     )
   }
 
-  const bundle = query.data?.byElement?.[0]
+  const bundle =
+    query.data?.byElement?.find((be) => be.elementKey === elementKey) ||
+    query.data?.byElement?.[0]
   const currency = query.data?.currency || project.currency
   const hasBoqItems = Boolean(bundle?.boq.some((l) => l.kind === 'item'))
   const hasBomItems = Boolean(bundle?.bom.some((l) => l.kind === 'item'))
