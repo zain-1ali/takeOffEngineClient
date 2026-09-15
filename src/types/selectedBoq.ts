@@ -31,6 +31,8 @@ export type SelectedBoqItem = {
   takeoffLineCount: number
   isManual: boolean
   quantityMode?: 'TYPED' | 'TAKEOFF' | ''
+  lineKey?: string
+  scope?: 'PROJECT' | 'FLOOR' | ''
   createdAt: string
   updatedAt: string
 }

@@ -264,6 +264,7 @@ export function ElementReportsTab({
           projectId={project.id}
           lineKey={analysisLine.lineKey}
           currency={currency}
+          boqQty={analysisLine.qty}
           onClose={() => setAnalysisLine(null)}
         />
       ) : null}

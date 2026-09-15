@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createPackResource,
+  getReports,
   listPackAnalyses,
   listPackResources,
   patchPackAnalysis,
@@ -52,6 +53,14 @@ export function PackRatesView({
     queryFn: () => listPackAnalyses(project.id, { q: q || undefined, limit: 120 }),
     enabled: tab === 'analyses',
   })
+  const reportsQ = useQuery({
+    queryKey: ['reports', project.id, 'project', 'all'],
+    queryFn: () => getReports(project.id, { scope: 'project' }),
+    enabled: Boolean(openKey),
+  })
+  const openBoqQty = openKey
+    ? reportsQ.data?.boq.find((line) => line.lineKey === openKey)?.qty
+    : undefined
 
   const patchRes = useMutation({
     mutationFn: (args: {
@@ -376,6 +385,7 @@ export function PackRatesView({
           projectId={project.id}
           lineKey={openKey}
           currency={currency}
+          boqQty={openBoqQty}
           onClose={() => setOpenKey(null)}
         />
       )}

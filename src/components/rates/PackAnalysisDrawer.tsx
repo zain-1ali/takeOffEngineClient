@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createPackResource,
@@ -10,13 +10,24 @@ import {
 import { formatMoney } from '../../lib/units'
 import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 
-function categoryLabel(cat: string): string {
+const RATE_CATEGORIES = [
+  { code: 'MAT', label: 'Materials' },
+  { code: 'LAB', label: 'Labour' },
+  { code: 'PLT', label: 'Plant & Tools' },
+  { code: 'SUB', label: 'Subcontractor' },
+] as const
+
+type RateCategoryCode = (typeof RATE_CATEGORIES)[number]['code'] | 'OTHER' | 'UNASSIGNED'
+
+function categoryCode(cat?: string): RateCategoryCode {
   const c = String(cat || '').toUpperCase()
-  if (c === 'MAT') return 'Material'
-  if (c === 'LAB') return 'Labour'
-  if (c === 'PLT') return 'Plant & Tools'
-  if (c === 'SUB') return 'Subcontractor'
-  return cat || '—'
+  if (c === 'MAT' || c === 'LAB' || c === 'PLT' || c === 'SUB') return c
+  return cat ? 'OTHER' : 'UNASSIGNED'
+}
+
+function formatReq(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return value.toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 
 function pctLabel(fraction: number): string {
@@ -38,11 +49,14 @@ export function PackAnalysisDrawer({
   projectId,
   lineKey,
   currency,
+  boqQty,
   onClose,
 }: {
   projectId: string
   lineKey: string
   currency: string
+  /** Billed BOQ quantity for this line; used for total resource requirements. */
+  boqQty?: number | null
   onClose: () => void
 }) {
   const qc = useQueryClient()
@@ -177,6 +191,47 @@ export function PackAnalysisDrawer({
   const location = detail?.pricing?.location || ''
   const vat = detail?.pricing?.taxInclusive ? 'Included' : 'Excluded'
   const lines = draftLines || []
+  const billedQty =
+    boqQty != null && Number.isFinite(boqQty) && boqQty >= 0 ? boqQty : null
+
+  const groupedLines = useMemo(() => {
+    const buckets: Record<RateCategoryCode, DraftLine[]> = {
+      MAT: [],
+      LAB: [],
+      PLT: [],
+      SUB: [],
+      OTHER: [],
+      UNASSIGNED: [],
+    }
+    for (const ln of lines) {
+      const res = resourceByCode.get(ln.sourceCode)
+      buckets[categoryCode(res?.category)].push(ln)
+    }
+    const sections: Array<{
+      code: RateCategoryCode
+      label: string
+      rows: DraftLine[]
+    }> = RATE_CATEGORIES.map((cat) => ({
+      code: cat.code,
+      label: cat.label,
+      rows: buckets[cat.code],
+    }))
+    if (buckets.OTHER.length) {
+      sections.push({
+        code: 'OTHER',
+        label: 'Other',
+        rows: buckets.OTHER,
+      })
+    }
+    if (buckets.UNASSIGNED.length) {
+      sections.push({
+        code: 'UNASSIGNED',
+        label: 'Unassigned',
+        rows: buckets.UNASSIGNED,
+      })
+    }
+    return sections
+  }, [lines, resourceByCode])
 
   function setLine(key: string, patch: Partial<DraftLine>) {
     setDraftLines((rows) =>
@@ -240,10 +295,13 @@ export function PackAnalysisDrawer({
               <div className="grid grid-cols-[9rem_1fr_auto_1fr_auto_auto_auto_auto] gap-x-2 items-center">
                 <div className="px-2 py-1.5 text-steel bg-panel">Unit</div>
                 <div className="px-2 py-1.5">{detail.analysis.unit || '—'}</div>
+                <div className="px-2 py-1.5 text-steel">BOQ quantity</div>
+                <div className="px-2 py-1.5 font-mono">
+                  {formatReq(billedQty)}
+                  {detail.analysis.unit ? ` ${detail.analysis.unit}` : ''}
+                </div>
                 <div className="px-2 py-1.5 text-steel">Pricing basis</div>
                 <div className="px-2 py-1.5 truncate">{location || '—'}</div>
-                <div className="px-2 py-1.5 text-steel">Currency</div>
-                <div className="px-2 py-1.5">{currency}</div>
                 <div className="px-2 py-1.5 text-steel">VAT</div>
                 <div className="px-2 py-1.5">{vat}</div>
               </div>
@@ -275,14 +333,20 @@ export function PackAnalysisDrawer({
             </div>
 
             <div className="overflow-x-auto border border-steel-border">
-              <table className="w-full text-[11px] border-collapse min-w-[980px]">
+              <table className="w-full text-[11px] border-collapse min-w-[1120px]">
                 <thead>
                   <tr className="text-left text-steel bg-panel border-b border-steel-border">
                     <th className="py-1.5 px-2 font-medium w-8">No.</th>
                     <th className="py-1.5 px-2 font-medium">Code (databank)</th>
                     <th className="py-1.5 px-2 font-medium">Resource Description</th>
-                    <th className="py-1.5 px-2 font-medium">Category</th>
                     <th className="py-1.5 px-2 font-medium text-right">Qty / BOQ Unit</th>
+                    <th className="py-1.5 px-2 font-medium text-right">BOQ Qty</th>
+                    <th
+                      className="py-1.5 px-2 font-medium text-right"
+                      title="BOQ quantity × qty per BOQ unit"
+                    >
+                      Total Requirements
+                    </th>
                     <th className="py-1.5 px-2 font-medium">Resource Unit</th>
                     <th className="py-1.5 px-2 font-medium text-right">
                       Rate ({currency})
@@ -295,107 +359,140 @@ export function PackAnalysisDrawer({
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((ln, i) => {
-                    const res = resourceByCode.get(ln.sourceCode)
-                    const rateInclWaste = res
-                      ? res.unitRate * (1 + (Number(res.wastePct) || 0))
-                      : 0
-                    const amount = rateInclWaste * (Number(ln.quantity) || 0)
-                    return (
-                      <tr key={ln.key} className="border-b border-gridline">
-                        <td className="py-1 px-2 text-steel">{i + 1}</td>
-                        <td className="py-1 px-2">
-                          <select
-                            className="w-full bg-transparent border-b border-steel-border text-[11px] font-mono outline-none"
-                            value={ln.sourceCode}
-                            onChange={(e) => setLine(ln.key, { sourceCode: e.target.value })}
-                          >
-                            <option value="">Choose resource…</option>
-                            {filteredResources.map((r) => (
-                              <option key={r.id} value={r.code}>
-                                {r.code}
-                              </option>
-                            ))}
-                            {ln.sourceCode &&
-                              !filteredResources.some((r) => r.code === ln.sourceCode) && (
-                                <option value={ln.sourceCode}>{ln.sourceCode}</option>
-                              )}
-                          </select>
-                        </td>
-                        <td className={`py-1 px-2 ${res ? '' : 'text-danger'}`}>
-                          {res ? (
-                            <ResourceDescriptionInput
-                              value={res.description}
-                              code={res.code}
-                              onSave={(description) =>
-                                patchResourceDescription.mutate({
-                                  id: res.id,
-                                  description,
-                                })
+                  {groupedLines.map((section) => {
+                    let sectionAmount = 0
+                    let sectionReq = 0
+                    const body = section.rows.map((ln, i) => {
+                      const res = resourceByCode.get(ln.sourceCode)
+                      const qtyPerUnit = Number(ln.quantity) || 0
+                      const rateInclWaste = res
+                        ? res.unitRate * (1 + (Number(res.wastePct) || 0))
+                        : 0
+                      const amount = rateInclWaste * qtyPerUnit
+                      const totalReq =
+                        billedQty != null ? billedQty * qtyPerUnit : null
+                      sectionAmount += amount
+                      if (totalReq != null) sectionReq += totalReq
+                      return (
+                        <tr key={ln.key} className="border-b border-gridline">
+                          <td className="py-1 px-2 text-steel">{i + 1}</td>
+                          <td className="py-1 px-2">
+                            <select
+                              className="w-full bg-transparent border-b border-steel-border text-[11px] font-mono outline-none"
+                              value={ln.sourceCode}
+                              onChange={(e) =>
+                                setLine(ln.key, { sourceCode: e.target.value })
+                              }
+                            >
+                              <option value="">Choose resource…</option>
+                              {filteredResources.map((r) => (
+                                <option key={r.id} value={r.code}>
+                                  {r.code}
+                                </option>
+                              ))}
+                              {ln.sourceCode &&
+                                !filteredResources.some(
+                                  (r) => r.code === ln.sourceCode,
+                                ) && (
+                                  <option value={ln.sourceCode}>
+                                    {ln.sourceCode}
+                                  </option>
+                                )}
+                            </select>
+                          </td>
+                          <td className={`py-1 px-2 ${res ? '' : 'text-danger'}`}>
+                            {res ? (
+                              <ResourceDescriptionInput
+                                value={res.description}
+                                code={res.code}
+                                onSave={(description) =>
+                                  patchResourceDescription.mutate({
+                                    id: res.id,
+                                    description,
+                                  })
+                                }
+                              />
+                            ) : ln.sourceCode ? (
+                              `${ln.sourceCode} (missing)`
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="py-1 px-2 w-24">
+                            <NumericInput
+                              value={ln.quantity}
+                              rememberFormula={false}
+                              className="w-full text-right text-[11px] bg-transparent border-b border-steel-border"
+                              onChange={(v) =>
+                                setLine(ln.key, { quantity: v ?? 0 })
                               }
                             />
-                          ) : ln.sourceCode ? (
-                            `${ln.sourceCode} (missing)`
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="py-1 px-2 text-steel">
-                          {res ? categoryLabel(res.category) : '—'}
-                        </td>
-                        <td className="py-1 px-2 w-24">
-                          <NumericInput
-                            value={ln.quantity}
-                            rememberFormula={false}
-                            className="w-full text-right text-[11px] bg-transparent border-b border-steel-border"
-                            onChange={(v) => setLine(ln.key, { quantity: v ?? 0 })}
-                          />
-                        </td>
-                        <td className="py-1 px-2 text-steel">{res?.unit || '—'}</td>
-                        <td className="py-1 px-2 text-right">
-                          {res ? formatMoney(rateInclWaste, currency) : '—'}
-                        </td>
-                        <td className="py-1 px-2 text-right">
-                          {res ? formatMoney(amount, currency) : '—'}
-                        </td>
-                        <td className="py-1 px-2">
-                          <input
-                            value={ln.remarks}
-                            onChange={(e) => setLine(ln.key, { remarks: e.target.value })}
-                            className="w-full bg-transparent border-b border-steel-border text-[11px] outline-none"
-                          />
-                        </td>
-                        <td className="py-1 px-2">
-                          <button
-                            type="button"
-                            className="text-steel hover:text-danger text-[11px]"
-                            onClick={() =>
-                              setDraftLines((rows) =>
-                                (rows || []).filter((r) => r.key !== ln.key),
-                              )
-                            }
+                          </td>
+                          <td className="py-1 px-2 text-right text-steel font-mono">
+                            {formatReq(billedQty)}
+                          </td>
+                          <td className="py-1 px-2 text-right font-mono">
+                            {formatReq(totalReq)}
+                          </td>
+                          <td className="py-1 px-2 text-steel">{res?.unit || '—'}</td>
+                          <td className="py-1 px-2 text-right">
+                            {res ? formatMoney(rateInclWaste, currency) : '—'}
+                          </td>
+                          <td className="py-1 px-2 text-right">
+                            {res ? formatMoney(amount, currency) : '—'}
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              value={ln.remarks}
+                              onChange={(e) =>
+                                setLine(ln.key, { remarks: e.target.value })
+                              }
+                              className="w-full bg-transparent border-b border-steel-border text-[11px] outline-none"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <button
+                              type="button"
+                              className="text-steel hover:text-danger text-[11px]"
+                              onClick={() =>
+                                setDraftLines((rows) =>
+                                  (rows || []).filter((r) => r.key !== ln.key),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })
+                    return (
+                      <Fragment key={section.code}>
+                        <tr className="bg-panel border-b border-steel-border">
+                          <td
+                            colSpan={11}
+                            className="py-1.5 px-2 font-semibold uppercase tracking-wide text-ink"
                           >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
+                            {section.label}
+                          </td>
+                        </tr>
+                        {body}
+                        <tr className="border-b border-steel-border bg-panel/40">
+                          <td colSpan={5} className="py-1 px-2 font-semibold">
+                            {section.label} subtotal
+                          </td>
+                          <td className="py-1 px-2 text-right font-semibold font-mono">
+                            {billedQty != null ? formatReq(sectionReq) : '—'}
+                          </td>
+                          <td colSpan={2} />
+                          <td className="py-1 px-2 text-right font-semibold">
+                            {formatMoney(sectionAmount, currency)}
+                          </td>
+                          <td colSpan={2} />
+                        </tr>
+                      </Fragment>
                     )
                   })}
-                  <TotalRow
-                    label="Materials Total"
-                    amount={computed.material}
-                    currency={currency}
-                  />
-                  <TotalRow
-                    label="Labour Total"
-                    amount={computed.labour}
-                    currency={currency}
-                  />
-                  <TotalRow
-                    label="Plant & Subcontract Total"
-                    amount={computed.plant + computed.subcontract}
-                    currency={currency}
-                  />
                   <TotalRow
                     label="Direct Resource Cost"
                     amount={computed.directResourceCost}
@@ -531,8 +628,10 @@ export function PackAnalysisDrawer({
             </div>
 
             <p className="text-[11px] text-steel leading-relaxed">
-              Resource rows use the Prices Databank. Save to recalc totals in {currency}.
-              Current BOQ billed rate: {formatMoney(applied, currency)}.
+              Resource rows use the Prices Databank, grouped by category with a
+              subtotal on each. Total requirements = BOQ quantity × qty per BOQ
+              unit. Save to recalc allowances in {currency}. Current BOQ billed
+              rate: {formatMoney(applied, currency)}.
             </p>
             {mut.isError && (
               <p className="text-sm text-danger">
@@ -648,11 +747,11 @@ function TotalRow({
   const cls = emph ? 'font-semibold' : ''
   return (
     <tr className={`border-b border-gridline ${emph ? 'bg-panel/60' : ''}`}>
-      <td colSpan={3} className={`py-1 px-2 ${cls}`}>
+      <td colSpan={6} className={`py-1 px-2 ${cls}`}>
         {label}
+        {note ? <span className="ml-2 font-normal text-steel">{note}</span> : null}
       </td>
-      <td className="py-1 px-2 text-steel">{note || ''}</td>
-      <td colSpan={2}>{extra}</td>
+      <td className="py-1 px-2">{extra}</td>
       <td />
       <td className={`py-1 px-2 text-right ${cls}`}>{formatMoney(amount, currency)}</td>
       <td className="py-1 px-2 text-steel" colSpan={2}>

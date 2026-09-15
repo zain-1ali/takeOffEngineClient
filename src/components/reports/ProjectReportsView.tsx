@@ -411,6 +411,7 @@ export function ProjectReportsView({
                     projectId={project.id}
                     lineKey={analysisLine.lineKey}
                     currency={currency}
+                    boqQty={analysisLine.qty}
                     onClose={() => setAnalysisLine(null)}
                   />
                 ) : null}

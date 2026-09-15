@@ -150,9 +150,13 @@ export function ReportTable({
                         integer={line.unit === 'nos' || line.dec === 0}
                         onSave={(quantity) => onQtyChange(line, quantity)}
                       />
-                      {line.qtySource === 'engine' ? (
+                      {['engine', 'input', 'derived'].includes(
+                        line.qtySource || '',
+                      ) ? (
                         <span className="text-[9px] uppercase tracking-wide text-steel">
-                          from inputs
+                          {line.qtySource === 'derived'
+                            ? 'derived from inputs'
+                            : 'from inputs'}
                         </span>
                       ) : null}
                       {onFollowInputs &&

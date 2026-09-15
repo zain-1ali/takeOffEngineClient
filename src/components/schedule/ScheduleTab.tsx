@@ -55,6 +55,7 @@ import {
 } from '../modals/GridPlacementModal'
 // import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
+import { TakeoffLineInputsPanel } from './TakeoffLineInputsPanel'
 import {
   FieldMeasureButton,
   MeasureSessionModal,
@@ -235,12 +236,15 @@ export function ScheduleTab({
   floors,
   floorId,
   elementKey,
+  boqElementKey = elementKey,
   floorLevelException = false,
 }: {
   project: Project
   floors: Floor[]
   floorId: string
   elementKey: string
+  /** Pack heading key can differ from the shared calculation engine key. */
+  boqElementKey?: string
   /** Current workspace floor is incompatible but shown via instance exception. */
   floorLevelException?: boolean
 }) {
@@ -821,6 +825,21 @@ export function ScheduleTab({
             </DataTable>
           </div>
         )}
+        <div className="mt-5">
+          <h2 className="font-display text-base font-semibold text-ink">
+            Commercial and additional work inputs
+          </h2>
+          <p className="mt-1 text-xs text-steel">
+            Add excavation depth, working space, extra-over work, finishes,
+            accessories, tests, or other selected BOQ drivers.
+          </p>
+          <TakeoffLineInputsPanel
+            projectId={projectId}
+            floorId={floorId}
+            elementKey={boqElementKey}
+            compact
+          />
+        </div>
       </div>
 
       {measureSession ? (

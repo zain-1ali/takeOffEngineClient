@@ -331,6 +331,7 @@ export default function WorkspacePage() {
                     floors={floors}
                     floorId={currentFloorId}
                     elementKey={instanceKey}
+                    boqElementKey={elementKey}
                     floorLevelException={floorIsExceptionOnly}
                   />
                 )}
@@ -344,6 +345,9 @@ export default function WorkspacePage() {
                 )}
                 {tab === 'schedule' && !ELEMENT_ENGINES[instanceKey] && (
                   <CatalogueSchedulePanel
+                    projectId={projectId}
+                    floorId={currentFloorId}
+                    elementKey={elementKey}
                     elementLabel={element?.label || elementKey}
                   />
                 )}

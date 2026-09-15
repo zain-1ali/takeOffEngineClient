@@ -28,6 +28,7 @@ import type {
 } from '../types/selectedBoq'
 import type { TakeoffLine } from '../lib/boqTakeoff/measurement'
 import type { BbsBar } from '../lib/boqTakeoff/bbs'
+import type { TakeoffInputSet } from '../types/takeoffInputs'
 
 export function listProjects() {
   return api<{ projects: ProjectSummary[] }>('/api/projects')
@@ -556,6 +557,28 @@ export function listSelectedBoqItems(
   if (params.elementKey) q.set('elementKey', params.elementKey)
   return api<{ items: SelectedBoqItem[] }>(
     `/api/projects/${projectId}/selected-boq?${q.toString()}`,
+  )
+}
+
+export function getTakeoffInputSet(
+  projectId: string,
+  params: { floorId: string; elementKey: string },
+) {
+  const q = new URLSearchParams(params)
+  return api<{ inputSet: TakeoffInputSet }>(
+    `/api/projects/${projectId}/takeoff-inputs?${q.toString()}`,
+  )
+}
+
+export function updateTakeoffInputSet(
+  projectId: string,
+  params: { floorId: string; elementKey: string },
+  body: Pick<TakeoffInputSet, 'shared' | 'lineInputs'>,
+) {
+  const q = new URLSearchParams(params)
+  return api<{ inputSet: TakeoffInputSet }>(
+    `/api/projects/${projectId}/takeoff-inputs?${q.toString()}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
   )
 }
 
