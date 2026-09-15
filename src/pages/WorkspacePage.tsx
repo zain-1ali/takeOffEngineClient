@@ -331,7 +331,6 @@ export default function WorkspacePage() {
                     floors={floors}
                     floorId={currentFloorId}
                     elementKey={instanceKey}
-                    headingElementKey={reportKey}
                     floorLevelException={floorIsExceptionOnly}
                   />
                 )}
@@ -345,12 +344,7 @@ export default function WorkspacePage() {
                 )}
                 {tab === 'schedule' && !ELEMENT_ENGINES[instanceKey] && (
                   <CatalogueSchedulePanel
-                    project={project}
-                    floorId={currentFloorId}
-                    elementKey={reportKey}
                     elementLabel={element?.label || elementKey}
-                    catalogueOnly={catalogueOnly}
-                    packScope={element?.packScope}
                   />
                 )}
                 {tab === 'model' && has3D && floorOptions.length > 0 && (

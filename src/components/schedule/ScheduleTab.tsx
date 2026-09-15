@@ -66,7 +66,6 @@ import {
   isTraceableScheduleField,
   resolveFieldMeasureFocus,
 } from '../../constants/measureTraceableFields'
-import { TakeoffInputsBoqPanel } from './TakeoffInputsBoqPanel'
 
 const POINT_PLACEMENT_KEYS = new Set(['PAD_FOOTING', 'RAFT', 'COLUMNS'])
 const SPAN_PLACEMENT_KEYS = new Set(['WALLS', 'BEAMS'])
@@ -236,15 +235,12 @@ export function ScheduleTab({
   floors,
   floorId,
   elementKey,
-  headingElementKey,
   floorLevelException = false,
 }: {
   project: Project
   floors: Floor[]
   floorId: string
   elementKey: string
-  /** Catalogue heading when this engine is linked (e.g. Roof Slab). */
-  headingElementKey?: string
   /** Current workspace floor is incompatible but shown via instance exception. */
   floorLevelException?: boolean
 }) {
@@ -825,11 +821,6 @@ export function ScheduleTab({
             </DataTable>
           </div>
         )}
-        <TakeoffInputsBoqPanel
-          project={project}
-          floorId={floorId}
-          elementKey={headingElementKey || elementKey}
-        />
       </div>
 
       {measureSession ? (

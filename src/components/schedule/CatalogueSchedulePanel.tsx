@@ -1,21 +1,8 @@
-import { TakeoffInputsBoqPanel } from './TakeoffInputsBoqPanel'
-import type { Project } from '../../types/api'
-
 /** Take off Inputs tab for pack/catalogue items that have no 3D engine. */
 export function CatalogueSchedulePanel({
-  project,
-  floorId,
-  elementKey,
   elementLabel,
-  catalogueOnly = true,
-  packScope,
 }: {
-  project: Project
-  floorId: string
-  elementKey: string
   elementLabel: string
-  catalogueOnly?: boolean
-  packScope?: 'PROJECT' | 'FLOOR'
 }) {
   return (
     <div className="h-full overflow-auto px-6 py-6">
@@ -24,17 +11,9 @@ export function CatalogueSchedulePanel({
           Take off Inputs
         </h2>
         <p className="text-sm text-steel leading-relaxed">
-          {elementLabel} has no 3D instance table. Measure BOQ lines here to
-          fill quantities.
+          {elementLabel} has no takeoff input table. Enter its quantities
+          directly in BOQ.
         </p>
-        <TakeoffInputsBoqPanel
-          project={project}
-          floorId={floorId}
-          elementKey={elementKey}
-          catalogueOnly={catalogueOnly}
-          packScope={packScope}
-          variant="catalogue"
-        />
       </div>
     </div>
   )

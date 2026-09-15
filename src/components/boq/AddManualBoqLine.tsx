@@ -209,8 +209,8 @@ export function AddManualBoqLine({
         <p className="mt-1.5 text-[11px] text-danger">Could not add the line.</p>
       ) : (
         <p className="mt-1.5 text-[10px] text-steel">
-          The line is added under the chosen category. Leave qty at 0 and
-          measure it on Take off Inputs, or type a number in the BOQ table.
+          The line is added under the chosen category. Enter its quantity in
+          the BOQ table.
         </p>
       )}
     </div>

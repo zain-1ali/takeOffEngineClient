@@ -119,7 +119,7 @@ export function ReportTable({
                     {line.source === 'CATALOGUE' && Number(line.qty) === 0 && (
                       <span
                         className="shrink-0 text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
-                        title="Type a qty in the table, or measure it on Take off Inputs"
+                        title="Type a quantity in the BOQ table"
                       >
                         No qty
                       </span>
@@ -227,7 +227,7 @@ function EditableQty({
   return (
     <NumericInput
       aria-label="BOQ quantity"
-      title="Type a quantity and press Enter or click away. Measure unbound lines on Take off Inputs."
+      title="Type a quantity and press Enter or click away."
       value={value}
       allowEmpty
       emptyValue={0}

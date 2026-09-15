@@ -380,7 +380,7 @@ export function ProjectReportsView({
                 <ReportTable
                   lines={data.boq}
                   currency={currency}
-                  emptyMessage="No BOQ items for this scope yet. Type a qty in the table, or measure it on Take off Inputs."
+                  emptyMessage="No BOQ items for this scope yet. Type a quantity in the table."
                   onQtyChange={(line, quantity) => {
                     if (line.selectedBoqId) {
                       qtyMut.mutate({ id: line.selectedBoqId, quantity })
