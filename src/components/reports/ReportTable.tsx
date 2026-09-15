@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { formatMoney } from '../../lib/units'
 import type { ReportLine } from '../../types/reports'
-import { DataTable } from '../ui'
+import { DataTable, NumericInput } from '../ui'
 
 function fmtQty(qty: number | undefined, line: ReportLine): string {
   if (qty == null || Number.isNaN(qty)) return '—'
@@ -16,7 +16,8 @@ export function ReportTable({
   lines,
   currency,
   emptyMessage = 'No quantities to bill.',
-  onQtyClick,
+  onQtyChange,
+  onFollowInputs,
   onDeleteLine,
   onRateClick,
   onDescriptionChange,
@@ -24,8 +25,10 @@ export function ReportTable({
   lines: ReportLine[]
   currency: string
   emptyMessage?: string
-  /** Click a catalogue qty cell to open the takeoff sheet / BBS. */
-  onQtyClick?: (line: ReportLine) => void
+  /** Type a qty directly in the table (does not open takeoff). */
+  onQtyChange?: (line: ReportLine, quantity: number) => void
+  /** Clear TYPED override so a bound line follows Take off Inputs again. */
+  onFollowInputs?: (line: ReportLine) => void
   /** Remove a manual BOQ line. */
   onDeleteLine?: (line: ReportLine) => void
   /** Open pack RATE ANALYSIS for this line. */
@@ -48,7 +51,11 @@ export function ReportTable({
             <DataTable.HeaderCell className="!py-1.5 text-[11px]">
               Description
             </DataTable.HeaderCell>
-            <DataTable.HeaderCell align="right" className="w-16 !py-1.5 text-[11px]">
+            <DataTable.HeaderCell
+              align="right"
+              className="w-36 !py-1.5 text-[11px]"
+              title="Type a quantity in the cell. Bound lines follow Take off Inputs until you type."
+            >
               Qty
             </DataTable.HeaderCell>
             <DataTable.HeaderCell className="w-10 !py-1.5 text-[11px]">
@@ -112,7 +119,7 @@ export function ReportTable({
                     {line.source === 'CATALOGUE' && Number(line.qty) === 0 && (
                       <span
                         className="shrink-0 text-[9px] uppercase tracking-wide text-steel border border-steel-border px-0.5 leading-4"
-                        title="Click Qty to open the takeoff sheet"
+                        title="Type a qty in the table, or measure it on Take off Inputs"
                       >
                         No qty
                       </span>
@@ -136,38 +143,31 @@ export function ReportTable({
                   numeric
                   className={`!py-1 text-[12px] ${line.isRebar ? 'text-chalk' : ''}`}
                 >
-                  {onQtyClick && line.selectedBoqId ? (
-                    <button
-                      type="button"
-                      className="w-full text-right underline decoration-dotted underline-offset-2 hover:text-signal"
-                      title={
-                        line.unit === 't' || line.unit === 'kg'
-                          ? 'Open bar bending schedule / PDF measure'
-                          : line.takeoffLinked
-                            ? 'Open linked takeoff / PDF measure'
-                            : 'Open takeoff sheet / PDF measure'
-                      }
-                      onClick={() => onQtyClick(line)}
-                    >
-                      <span className="inline-flex items-baseline justify-end gap-1">
-                        <span
-                          className="text-[10px] text-signal no-underline"
-                          title={
-                            line.takeoffLinked
-                              ? 'Takeoff linked to PDF measure'
-                              : 'Open takeoff'
-                          }
-                        >
-                          {line.takeoffLinked ? '↗ PDF' : 'takeoff'}
+                  {onQtyChange && (line.selectedBoqId || line.manualBoqId) ? (
+                    <div className="flex flex-col items-end gap-0.5">
+                      <EditableQty
+                        value={Number(line.qty) || 0}
+                        integer={line.unit === 'nos' || line.dec === 0}
+                        onSave={(quantity) => onQtyChange(line, quantity)}
+                      />
+                      {line.qtySource === 'engine' ? (
+                        <span className="text-[9px] uppercase tracking-wide text-steel">
+                          from inputs
                         </span>
-                        {fmtQty(line.qty, line)}
-                        {line.takeoffLineCount ? (
-                          <span className="text-[10px] text-steel no-underline">
-                            ({line.takeoffLineCount})
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
+                      ) : null}
+                      {onFollowInputs &&
+                      line.qtySource === 'typed' &&
+                      line.suggestedQty != null ? (
+                        <button
+                          type="button"
+                          className="text-[10px] text-signal underline decoration-dotted underline-offset-2 hover:text-ink"
+                          title="Clear typed qty and follow Take off Inputs"
+                          onClick={() => onFollowInputs(line)}
+                        >
+                          Use engine qty
+                        </button>
+                      ) : null}
+                    </div>
                   ) : (
                     fmtQty(line.qty, line)
                   )}
@@ -212,6 +212,35 @@ export function ReportTable({
         </DataTable.Body>
       </DataTable>
     </div>
+  )
+}
+
+function EditableQty({
+  value,
+  integer,
+  onSave,
+}: {
+  value: number
+  integer?: boolean
+  onSave: (value: number) => void
+}) {
+  return (
+    <NumericInput
+      aria-label="BOQ quantity"
+      title="Type a quantity and press Enter or click away. Measure unbound lines on Take off Inputs."
+      value={value}
+      allowEmpty
+      emptyValue={0}
+      min={0}
+      integer={integer}
+      rememberFormula={false}
+      showError={false}
+      className="w-[4.5rem] !py-0.5 !px-1 text-right text-[12px] font-mono border border-transparent bg-transparent hover:border-steel-border focus:border-signal"
+      onChange={(next) => {
+        const qty = next != null && Number.isFinite(next) && next >= 0 ? next : 0
+        if (qty !== value) onSave(qty)
+      }}
+    />
   )
 }
 

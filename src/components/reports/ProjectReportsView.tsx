@@ -7,7 +7,6 @@ import {
   updateSelectedBoqItem,
 } from '../../api/projectsApi'
 import type { ReportLine } from '../../types/reports'
-import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import {
   exportAllBillExcels,
   exportAllBillPDFs,
@@ -46,7 +45,6 @@ export function ProjectReportsView({
   const [sub, setSub] = useState<ReportSubTab>('boq')
   const [panel, setPanel] = useState<Panel>('reports')
   const [exportBusy, setExportBusy] = useState(false)
-  const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
   const [analysisLine, setAnalysisLine] = useState<ReportLine | null>(null)
 
   const packQuery = useQuery({
@@ -100,6 +98,38 @@ export function ProjectReportsView({
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
       void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+    },
+  })
+
+  const qtyMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      updateSelectedBoqItem(project.id, id, { quantity }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+    },
+  })
+
+  const manualQtyMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      updateManualBoqItem(project.id, id, { quantity }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['manual-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+    },
+  })
+
+  const followMut = useMutation({
+    mutationFn: (id: string) =>
+      updateSelectedBoqItem(project.id, id, { followInputs: true }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
       void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
     },
   })
@@ -350,8 +380,17 @@ export function ProjectReportsView({
                 <ReportTable
                   lines={data.boq}
                   currency={currency}
-                  emptyMessage="No BOQ items for this scope yet. Click Qty to open the takeoff sheet."
-                  onQtyClick={setQtyLine}
+                  emptyMessage="No BOQ items for this scope yet. Type a qty in the table, or measure it on Take off Inputs."
+                  onQtyChange={(line, quantity) => {
+                    if (line.selectedBoqId) {
+                      qtyMut.mutate({ id: line.selectedBoqId, quantity })
+                    } else if (line.manualBoqId) {
+                      manualQtyMut.mutate({ id: line.manualBoqId, quantity })
+                    }
+                  }}
+                  onFollowInputs={(line) => {
+                    if (line.selectedBoqId) followMut.mutate(line.selectedBoqId)
+                  }}
                   onRateClick={setAnalysisLine}
                   onDescriptionChange={(line, description) => {
                     if (line.selectedBoqId) {
@@ -365,17 +404,6 @@ export function ProjectReportsView({
                         description,
                       })
                     }
-                  }}
-                />
-                <BoqTakeoffDialog
-                  open={Boolean(qtyLine)}
-                  line={qtyLine}
-                  projectId={project.id}
-                  floorId={floorId}
-                  onClose={() => setQtyLine(null)}
-                  onOpenSchedule={() => {
-                    setQtyLine(null)
-                    onDone?.()
                   }}
                 />
                 {analysisLine?.lineKey ? (

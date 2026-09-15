@@ -10,7 +10,6 @@ import { ELEMENT_ENGINES } from '../../elementEngines'
 import type { Project } from '../../types/api'
 import type { ReportLine } from '../../types/reports'
 import { AddManualBoqLine } from '../boq/AddManualBoqLine'
-import { BoqTakeoffDialog } from '../boq/BoqTakeoffDialog'
 import { LabourTables } from './LabourTables'
 import { PrelimsQtyPanel } from './PrelimsQtyPanel'
 import { ReportTable } from './ReportTable'
@@ -24,7 +23,6 @@ export function ElementReportsTab({
   elementKey,
   engineKey,
   sub,
-  onOpenSchedule,
   catalogueOnly = false,
   packScope,
   elementLabel,
@@ -35,7 +33,6 @@ export function ElementReportsTab({
   elementKey: string
   engineKey?: string
   sub: ReportSubTab
-  onOpenSchedule?: () => void
   catalogueOnly?: boolean
   packScope?: 'PROJECT' | 'FLOOR'
   elementLabel?: string
@@ -46,7 +43,6 @@ export function ElementReportsTab({
   const implemented = !!ELEMENT_ENGINES[instanceKey] || catalogueOnly
   const projectScoped = catalogueOnly && packScope === 'PROJECT'
   const qc = useQueryClient()
-  const [qtyLine, setQtyLine] = useState<ReportLine | null>(null)
   const [analysisLine, setAnalysisLine] = useState<ReportLine | null>(null)
 
   const query = useQuery({
@@ -90,6 +86,28 @@ export function ElementReportsTab({
       void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
       void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
       void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+    },
+  })
+
+  const qtyMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      updateSelectedBoqItem(project.id, id, { quantity }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analyses', project.id] })
+      void qc.invalidateQueries({ queryKey: ['pack-analysis', project.id] })
+    },
+  })
+
+  const followMut = useMutation({
+    mutationFn: (id: string) =>
+      updateSelectedBoqItem(project.id, id, { followInputs: true }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reports', project.id] })
+      void qc.invalidateQueries({ queryKey: ['selected-boq', project.id] })
+      void qc.invalidateQueries({ queryKey: ['cost-plan', project.id] })
     },
   })
 
@@ -153,7 +171,14 @@ export function ElementReportsTab({
             <ReportTable
               lines={bundle.boq}
               currency={currency}
-              onQtyClick={setQtyLine}
+              onQtyChange={(line, quantity) => {
+                if (line.selectedBoqId) {
+                  qtyMut.mutate({ id: line.selectedBoqId, quantity })
+                }
+              }}
+              onFollowInputs={(line) => {
+                if (line.selectedBoqId) followMut.mutate(line.selectedBoqId)
+              }}
               onRateClick={setAnalysisLine}
               onDescriptionChange={(line, description) => {
                 if (line.selectedBoqId) {
@@ -234,17 +259,6 @@ export function ElementReportsTab({
         </>
       )}
 
-      <BoqTakeoffDialog
-        open={Boolean(qtyLine)}
-        line={qtyLine}
-        projectId={project.id}
-        floorId={floorId}
-        onClose={() => setQtyLine(null)}
-        onOpenSchedule={() => {
-          setQtyLine(null)
-          onOpenSchedule?.()
-        }}
-      />
       {analysisLine?.lineKey ? (
         <PackAnalysisDrawer
           projectId={project.id}

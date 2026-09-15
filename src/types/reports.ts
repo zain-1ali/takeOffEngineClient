@@ -20,6 +20,8 @@ export type ReportLine = {
   manualBoqId?: string
   lineKey?: string
   suggestedQty?: number
+  quantityMode?: 'TYPED' | 'TAKEOFF' | ''
+  qtySource?: 'typed' | 'takeoff' | 'engine' | 'stored'
   takeoffKind?: '' | 'dim' | 'bbs'
   measurementSetId?: string | null
   takeoffLineCount?: number

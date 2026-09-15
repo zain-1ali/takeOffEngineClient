@@ -93,7 +93,9 @@ export function CostPlanThemedPreview({
         </p>
         <p className="text-[11px] opacity-90 mt-1">
           Theme: {theme.name}
-          {data.gfaM2 != null ? ` · GFA ${data.gfaM2} m²` : ''}
+          {data.gfaM2 != null && data.gfaM2 > 0
+            ? ` · GFA ${data.gfaM2} m²`
+            : ' · set GFA to show Rate/m²'}
         </p>
       </div>
 

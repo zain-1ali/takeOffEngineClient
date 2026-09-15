@@ -45,22 +45,7 @@ export function ElementTree({
           </span>
         </button>
       )}
-      {onOpenRegister && (
-        <button
-          type="button"
-          onClick={onOpenRegister}
-          className={`w-full text-left px-5 py-2 mb-2 border-l-2 text-[13px] font-medium ${
-            registerActive
-              ? 'bg-panel border-signal text-ink'
-              : 'border-transparent text-ink/90 hover:bg-panel/60'
-          }`}
-        >
-          Element Register
-          <span className="block text-[10px] font-normal text-steel mt-0.5">
-            24 codes · units · NRM2 · overlap
-          </span>
-        </button>
-      )}
+      {/* Element Register UI hidden — master list still drives the tree. */}
       {catalogueLoading && (
         <p className="px-5 py-2 text-[11px] text-steel leading-snug">
           Loading Issue Tracker catalogue…

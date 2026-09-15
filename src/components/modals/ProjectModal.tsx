@@ -248,7 +248,7 @@ export function ProjectModal({
         <Field label="Gross Floor Area (m²)">
           <NumericInput
             className={inputClass}
-            placeholder="Optional — Cost Plan Rate/m² and Module 0 GFA lines"
+            placeholder="Cost Plan Rate/m² and Module 0 GFA lines"
             value={form.gfaM2}
             allowEmpty
             min={0}

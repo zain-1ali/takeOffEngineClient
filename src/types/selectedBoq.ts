@@ -30,6 +30,7 @@ export type SelectedBoqItem = {
   measurementSetId: string | null
   takeoffLineCount: number
   isManual: boolean
+  quantityMode?: 'TYPED' | 'TAKEOFF' | ''
   createdAt: string
   updatedAt: string
 }

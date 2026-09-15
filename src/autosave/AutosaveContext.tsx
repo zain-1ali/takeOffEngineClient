@@ -147,6 +147,7 @@ export function AutosaveProvider({ children }: { children: ReactNode }) {
       projectIds.forEach((id) => {
         void qc.invalidateQueries({ queryKey: ['project', id] })
         void qc.invalidateQueries({ queryKey: ['reports', id] })
+        void qc.invalidateQueries({ queryKey: ['cost-plan', id] })
         if (touchedInstances) {
           void qc.invalidateQueries({ queryKey: ['instances', id] })
           void qc.invalidateQueries({ queryKey: ['calculate', id] })

@@ -14,7 +14,6 @@ import { ScheduleTab } from '../components/schedule/ScheduleTab'
 import { ModelTab } from '../components/model/ModelTab'
 import { ElementReportsTab } from '../components/reports/ElementReportsTab'
 import { ProjectReportsView } from '../components/reports/ProjectReportsView'
-import { ElementRegisterView } from '../components/register/ElementRegisterView'
 import { DrawingsRegisterView } from '../components/drawings/DrawingsRegisterView'
 import { ELEMENT_ENGINES } from '../elementEngines'
 import {
@@ -53,10 +52,9 @@ export default function WorkspacePage() {
   const floors = projectQuery.data?.floors ?? []
 
   const showProjectReports = activeStep === 'reports'
-  const showElementRegister = activeStep === 'register'
   const showDrawingsRegister = activeStep === 'drawings'
   const hideElementWorkspace =
-    showProjectReports || showElementRegister || showDrawingsRegister
+    showProjectReports || showDrawingsRegister
 
   const packQuery = useQuery({
     queryKey: ['boq-pack', projectId],
@@ -166,8 +164,6 @@ export default function WorkspacePage() {
       setTab('schedule')
     } else if (id === 'drawings') {
       setActiveStep('drawings')
-    } else if (id === 'register') {
-      setActiveStep('register')
     } else if (id === 'reports') {
       setActiveStep('reports')
     }
@@ -218,8 +214,6 @@ export default function WorkspacePage() {
           onSelect={onSelectElement}
           modules={elementTree}
           catalogueLoading={packQuery.isPending}
-          registerActive={showElementRegister}
-          onOpenRegister={() => setActiveStep('register')}
           drawingsActive={showDrawingsRegister}
           onOpenDrawings={() => setActiveStep('drawings')}
         />
@@ -264,11 +258,6 @@ export default function WorkspacePage() {
             {showProjectReports && (
               <span className="text-xs text-steel/70">Used when scope is “This floor”</span>
             )}
-            {showElementRegister && (
-              <span className="text-xs text-steel/70">
-                Master takeoff mapping — units, rules, materials, NRM2, overlap
-              </span>
-            )}
             {showDrawingsRegister && (
               <span className="text-xs text-steel/70">
                 Project drawings — one PDF per floor
@@ -287,7 +276,7 @@ export default function WorkspacePage() {
               {(
                 (
                   [
-                    ['schedule', 'Schedule'],
+                    ['schedule', 'Take off Inputs'],
                     ['model', '3D Model'],
                     ['boq', 'BOQ'],
                     ['bom', 'BOM'],
@@ -325,14 +314,6 @@ export default function WorkspacePage() {
                   setTab('schedule')
                 }}
               />
-            ) : showElementRegister ? (
-              <ElementRegisterView
-                onOpenElement={(key) => {
-                  setElementKey(key)
-                  setActiveStep('model')
-                  setTab('schedule')
-                }}
-              />
             ) : showProjectReports ? (
               <ProjectReportsView
                 project={project}
@@ -350,6 +331,7 @@ export default function WorkspacePage() {
                     floors={floors}
                     floorId={currentFloorId}
                     elementKey={instanceKey}
+                    headingElementKey={reportKey}
                     floorLevelException={floorIsExceptionOnly}
                   />
                 )}
@@ -363,10 +345,12 @@ export default function WorkspacePage() {
                 )}
                 {tab === 'schedule' && !ELEMENT_ENGINES[instanceKey] && (
                   <CatalogueSchedulePanel
-                    projectId={projectId}
+                    project={project}
                     floorId={currentFloorId}
+                    elementKey={reportKey}
                     elementLabel={element?.label || elementKey}
-                    onOpenBoq={() => setTab('boq')}
+                    catalogueOnly={catalogueOnly}
+                    packScope={element?.packScope}
                   />
                 )}
                 {tab === 'model' && has3D && floorOptions.length > 0 && (
@@ -391,7 +375,6 @@ export default function WorkspacePage() {
                     elementKey={reportKey}
                     engineKey={element?.engineKey}
                     sub={tab}
-                    onOpenSchedule={() => setTab('schedule')}
                     catalogueOnly={catalogueOnly}
                     packScope={element?.packScope}
                     elementLabel={element?.label}

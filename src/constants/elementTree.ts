@@ -54,7 +54,8 @@ export const FLOW_STEPS = [
   { id: 'drawings', num: 3, label: 'Drawings' },
   { id: 'grid', num: 4, label: 'Axis Grid' },
   { id: 'model', num: 5, label: 'Model Elements' },
-  { id: 'register', num: 6, label: 'Element Register' },
+  // Hidden: client asked to drop the Element Register step from the UI.
+  // { id: 'register', num: 6, label: 'Element Register' },
   { id: 'reports', num: 7, label: 'Reports' },
 ] as const
 

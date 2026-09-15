@@ -10,7 +10,7 @@ import {
 } from '../../lib/reportThemes'
 import { formatMoney } from '../../lib/units'
 import type { Project } from '../../types/api'
-import { GhostButton, PrimaryButton } from '../ui'
+import { GhostButton, NumericInput, PrimaryButton } from '../ui'
 import { CostPlanThemedPreview } from './CostPlanThemedPreview'
 import { ReportThemePicker } from './ReportThemePicker'
 
@@ -28,6 +28,15 @@ export function CostPlanExportScreen({
   const { schedule } = useAutosave()
   const previewRef = useRef<HTMLDivElement>(null)
   const [scope, setScope] = useState<Scope>('project')
+  const [gfaDraft, setGfaDraft] = useState<number | null>(
+    () => (project.gfaM2 != null && project.gfaM2 > 0 ? project.gfaM2 : null),
+  )
+
+  useEffect(() => {
+    setGfaDraft(
+      project.gfaM2 != null && project.gfaM2 > 0 ? project.gfaM2 : null,
+    )
+  }, [project.id, project.gfaM2])
   const [themeId, setThemeId] = useState<ReportThemeId>(() =>
     resolveReportTheme(project.reportTheme).id,
   )
@@ -174,7 +183,7 @@ export function CostPlanExportScreen({
               Export Cost Plan
             </h2>
             <p className="text-[12px] text-steel">
-              Theme, preview, and export in one place
+              Theme, preview, and export in one place. Rate/m² uses project GFA.
             </p>
           </div>
 
@@ -221,6 +230,30 @@ export function CostPlanExportScreen({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mt-3">
+          <label className="flex items-center gap-2 text-xs text-steel min-w-0">
+            <span className="shrink-0">GFA (m²)</span>
+            <NumericInput
+              className="w-28 !py-1 !px-2 text-xs font-mono border border-steel-border bg-panel text-ink"
+              placeholder="e.g. 1250"
+              value={gfaDraft}
+              allowEmpty
+              min={0}
+              onChange={(n) => {
+                const next = n != null && n > 0 ? n : null
+                setGfaDraft(next)
+                schedule({
+                  kind: 'project',
+                  projectId: project.id,
+                  patch: { gfaM2: next },
+                })
+              }}
+            />
+          </label>
+          {!(gfaDraft != null && gfaDraft > 0) && (
+            <span className="text-[11px] text-amber-200/90">
+              Enter GFA to show Rate/m² on each element. Same field as 01 Project.
+            </span>
+          )}
           <span className="text-xs text-steel">Scope</span>
           {(
             [

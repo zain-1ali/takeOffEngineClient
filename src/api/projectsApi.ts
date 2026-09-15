@@ -602,7 +602,7 @@ export function deleteSelectedBoqItem(projectId: string, itemId: string) {
 export function updateSelectedBoqItem(
   projectId: string,
   itemId: string,
-  body: { quantity?: number; description?: string },
+  body: { quantity?: number; description?: string; followInputs?: boolean },
 ) {
   return api<{ item: SelectedBoqItem }>(
     `/api/projects/${projectId}/selected-boq/${itemId}`,

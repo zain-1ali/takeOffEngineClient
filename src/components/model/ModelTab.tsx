@@ -95,7 +95,7 @@ export function ModelTab({
           {instancesQuery.isLoading && <p className="text-xs text-steel">Loading…</p>}
           {!instancesQuery.isLoading && instances.length === 0 && (
             <p className="text-xs text-steel/70">
-              No instances on this floor. Add some in the Schedule tab.
+              No instances on this floor. Add some in Take off Inputs.
             </p>
           )}
           <div className="space-y-0.5">
