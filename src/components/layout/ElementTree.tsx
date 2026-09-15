@@ -10,8 +10,6 @@ export function ElementTree({
   selectedKey,
   counts,
   onSelect,
-  registerActive = false,
-  onOpenRegister,
   drawingsActive = false,
   onOpenDrawings,
   modules = ELEMENT_TREE,
@@ -20,8 +18,6 @@ export function ElementTree({
   selectedKey: string
   counts: Record<string, number>
   onSelect: (el: ElementDef) => void
-  registerActive?: boolean
-  onOpenRegister?: () => void
   drawingsActive?: boolean
   onOpenDrawings?: () => void
   modules?: ElementModule[]
