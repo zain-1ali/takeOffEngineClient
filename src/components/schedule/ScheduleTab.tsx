@@ -55,7 +55,7 @@ import {
 } from '../modals/GridPlacementModal'
 // import { IfcImportPanel } from './IfcImportPanel'
 import { parseOpenings } from '../../lib/openings'
-import { TakeoffLineInputsPanel } from './TakeoffLineInputsPanel'
+import { ElementTakeoffForm } from './ElementTakeoffForm'
 import {
   FieldMeasureButton,
   MeasureSessionModal,
@@ -830,10 +830,10 @@ export function ScheduleTab({
             Commercial and additional work inputs
           </h2>
           <p className="mt-1 text-xs text-steel">
-            Add excavation depth, working space, extra-over work, finishes,
-            accessories, tests, or other selected BOQ drivers.
+            Shared measurements for this heading. BOQ items are quantified from
+            these cells plus the instance grid.
           </p>
-          <TakeoffLineInputsPanel
+          <ElementTakeoffForm
             projectId={projectId}
             floorId={floorId}
             elementKey={boqElementKey}

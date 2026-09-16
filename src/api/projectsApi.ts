@@ -28,7 +28,7 @@ import type {
 } from '../types/selectedBoq'
 import type { TakeoffLine } from '../lib/boqTakeoff/measurement'
 import type { BbsBar } from '../lib/boqTakeoff/bbs'
-import type { TakeoffInputSet } from '../types/takeoffInputs'
+import type { TakeoffInputSchema, TakeoffInputSet } from '../types/takeoffInputs'
 
 export function listProjects() {
   return api<{ projects: ProjectSummary[] }>('/api/projects')
@@ -570,10 +570,20 @@ export function getTakeoffInputSet(
   )
 }
 
+export function getTakeoffInputSchema(
+  projectId: string,
+  params: { floorId: string; elementKey: string },
+) {
+  const q = new URLSearchParams(params)
+  return api<TakeoffInputSchema>(
+    `/api/projects/${projectId}/takeoff-inputs/schema?${q.toString()}`,
+  )
+}
+
 export function updateTakeoffInputSet(
   projectId: string,
   params: { floorId: string; elementKey: string },
-  body: Pick<TakeoffInputSet, 'shared' | 'lineInputs'>,
+  body: Partial<Pick<TakeoffInputSet, 'shared' | 'lineInputs'>>,
 ) {
   const q = new URLSearchParams(params)
   return api<{ inputSet: TakeoffInputSet }>(

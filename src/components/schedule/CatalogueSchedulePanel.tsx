@@ -1,4 +1,4 @@
-import { TakeoffLineInputsPanel } from './TakeoffLineInputsPanel'
+import { ElementTakeoffForm } from './ElementTakeoffForm'
 
 /** Take off Inputs tab for pack/catalogue items that have no 3D engine. */
 export function CatalogueSchedulePanel({
@@ -19,11 +19,11 @@ export function CatalogueSchedulePanel({
           {elementLabel} — Take off Inputs
         </h2>
         <p className="text-sm text-steel leading-relaxed">
-          Provide the counts, dimensions, allowances, and measured drivers
-          needed by the selected work. Rates and amounts remain in BOQ.
+          Enter the shared counts, dimensions, and allowances for this heading.
+          Those cells quantify every selected BOQ item. Rates stay in BOQ.
         </p>
         <div className="pt-4">
-          <TakeoffLineInputsPanel
+          <ElementTakeoffForm
             projectId={projectId}
             floorId={floorId}
             elementKey={elementKey}

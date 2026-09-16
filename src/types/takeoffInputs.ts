@@ -33,3 +33,21 @@ export type TakeoffInputSet = {
   lineInputs: Record<string, TakeoffLineInput>
   updatedAt: string
 }
+
+export type TakeoffDriverField = {
+  key: string
+  label: string
+  group: string
+  type: 'number' | 'percent' | 'switch' | 'count'
+  unit?: string
+  default?: number | boolean
+  feeds?: string[]
+}
+
+export type TakeoffInputSchema = {
+  elementKey: string
+  engineKey: string
+  persistFloorId: string
+  fields: TakeoffDriverField[]
+  selectedCount: number
+}
